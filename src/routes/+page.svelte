@@ -22,6 +22,11 @@
             Start Tracking
           </Button>
         </a>
+        <a href="/simulation">
+          <Button variant="outline" size="lg" class="min-w-[200px]">
+            Trading Simulation
+          </Button>
+        </a>
       </div>
 
       <!-- Features -->
