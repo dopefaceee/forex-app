@@ -11,6 +11,11 @@
     TableHeader,
     TableRow
   } from "$lib/components/ui/table";
+  import * as Chart from "$lib/components/ui/chart/index.js";
+  import { Area, AreaChart, ChartClipPath } from "layerchart";
+  import { scaleTime } from "d3-scale";
+  import { curveNatural } from "d3-shape";
+  import { cubicInOut } from "svelte/easing";
 
   type TradeType = "profit" | "loss";
 
@@ -35,9 +40,13 @@
   const PL_MULTIPLIER = 10;
 
   // Initial trades (contoh)
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
   let trades: Trade[] = [
-    { id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0], lot: 0.16, pips: 300, type: "loss", note: "Example loss" },
-    { id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0], lot: 0.16, pips: 200, type: "profit", note: "Example win" }
+    { id: crypto.randomUUID(), date: yesterday.toISOString().split('T')[0], lot: 0.16, pips: 300, type: "loss", note: "Example loss" },
+    { id: crypto.randomUUID(), date: today.toISOString().split('T')[0], lot: 0.16, pips: 200, type: "profit", note: "Example win" }
   ];
 
   // =====================
@@ -133,6 +142,106 @@
   })();
 
   $: maxDrawdownPercent = startingSafe > 0 ? (maxDrawdownIdr / startingSafe) * 100 : 0;
+
+  // =====================
+  // CHART DATA
+  // =====================
+  $: chartData = (() => {
+    // Get the earliest trade date or use today
+    const firstTradeDate = trades.length > 0 && trades[0].date 
+      ? new Date(trades[0].date) 
+      : new Date();
+    
+    // Start with initial balance point (one day before first trade)
+    const initialDate = new Date(firstTradeDate);
+    initialDate.setDate(initialDate.getDate() - 1);
+    
+    const data = [{
+      date: initialDate,
+      dateLabel: initialDate.toLocaleDateString(),
+      balance: startingSafe,
+      balanceFormatted: fmtIdr(startingSafe),
+      type: 'initial' as const,
+      totalTrades: 0,
+      dailyPL: 0
+    }];
+    
+    // Group trades by date to get end-of-day balance
+    const tradesByDate = new Map<string, { 
+      balance: number, 
+      type: 'profit' | 'loss' | 'mixed',
+      trades: number,
+      dailyPL: number 
+    }>();
+    
+    let runningBalance = startingSafe;
+    let previousDayBalance = startingSafe;
+    
+    // Sort rows by date to ensure correct chronological order
+    const sortedRows = [...rows].sort((a, b) => {
+      const dateA = new Date(trades[a.no - 1].date);
+      const dateB = new Date(trades[b.no - 1].date);
+      return dateA.getTime() - dateB.getTime();
+    });
+    
+    sortedRows.forEach(row => {
+      const trade = trades[row.no - 1];
+      if (trade && trade.date) {
+        const dateKey = trade.date;
+        const existing = tradesByDate.get(dateKey) || { 
+          balance: runningBalance, 
+          type: 'mixed', 
+          trades: 0,
+          dailyPL: 0 
+        };
+        
+        // Update running balance
+        runningBalance = row.balanceAfter;
+        
+        // Calculate daily P/L
+        const currentTradePL = row.pl;
+        const totalDailyPL = existing.dailyPL + currentTradePL;
+        
+        // Determine day type
+        let dayType: 'profit' | 'loss' | 'mixed' = 'mixed';
+        if (totalDailyPL > 0) dayType = 'profit';
+        else if (totalDailyPL < 0) dayType = 'loss';
+        
+        tradesByDate.set(dateKey, {
+          balance: runningBalance,
+          type: dayType,
+          trades: existing.trades + 1,
+          dailyPL: totalDailyPL
+        });
+      }
+    });
+    
+    // Convert map to array for chart
+    tradesByDate.forEach((dayData, dateString) => {
+      const date = new Date(dateString);
+      data.push({
+        date: date,
+        dateLabel: date.toLocaleDateString(),
+        balance: dayData.balance,
+        balanceFormatted: fmtIdr(dayData.balance),
+        type: dayData.type,
+        totalTrades: dayData.trades,
+        dailyPL: dayData.dailyPL
+      });
+    });
+    
+    // Sort by date
+    data.sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    return data;
+  })();
+
+  const chartConfig = {
+    balance: {
+      label: "Balance (IDR)",
+      color: "var(--chart-1)"
+    }
+  } satisfies Chart.Config;
 </script>
 
 <section class="min-h-screen bg-background px-6 py-12">
@@ -205,6 +314,127 @@
           <Button onclick={addTrade}>Tambah Trade</Button>
           <Button variant="outline" onclick={clearTrades}>Reset</Button>
         </div>
+      </CardContent>
+    </Card>
+
+    <!-- BALANCE CHART -->
+    <Card class="rounded-2xl">
+      <CardHeader>
+        <CardTitle>Balance Chart</CardTitle>
+        <CardDescription>Visual representation of your balance progression over time</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {#if chartData.length > 1}
+          <Chart.Container config={chartConfig} class="-ml-3 aspect-auto h-[250px] w-full">
+            <AreaChart
+              data={chartData}
+              x="date"
+              xScale={scaleTime()}
+              y="balance"
+              series={[
+                {
+                  key: "balance",
+                  label: "Balance",
+                  color: chartConfig.balance.color,
+                }
+              ]}
+              props={{
+                area: {
+                  curve: curveNatural,
+                  "fill-opacity": 0.4,
+                  line: { class: "stroke-2" },
+                  motion: "tween",
+                },
+                xAxis: {
+                  ticks: chartData.length < 7 ? chartData.length : 7,
+                  format: (v) => {
+                    return v.toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    });
+                  },
+                },
+                yAxis: { 
+                  format: (v) => {
+                    if (v >= 1000000) {
+                      return `${(v / 1000000).toFixed(0)}M`;
+                    } else if (v >= 1000) {
+                      return `${(v / 1000).toFixed(0)}K`;
+                    }
+                    return v.toString();
+                  }
+                },
+              }}
+            >
+              {#snippet marks({ series, getAreaProps })}
+                <defs>
+                  <linearGradient id="fillBalance" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stop-color="var(--chart-1)"
+                      stop-opacity={0.8}
+                    />
+                    <stop
+                      offset="95%"
+                      stop-color="var(--chart-1)"
+                      stop-opacity={0.1}
+                    />
+                  </linearGradient>
+                </defs>
+                <ChartClipPath
+                  initialWidth={0}
+                  motion={{
+                    width: { type: "tween", duration: 1000, easing: cubicInOut },
+                  }}
+                >
+                  {#each series as s, i (s.key)}
+                    <Area
+                      {...getAreaProps(s, i)}
+                      fill="url(#fillBalance)"
+                    />
+                  {/each}
+                </ChartClipPath>
+              {/snippet}
+              {#snippet tooltip()}
+                <Chart.Tooltip 
+                  labelFormatter={(v) => {
+                    return v.toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    });
+                  }}
+                  indicator="line"
+                >
+                  {#snippet formatter({ item })}
+                    <div class="flex flex-col gap-1">
+                      <div class="flex items-center justify-between gap-8">
+                        <span class="text-xs text-muted-foreground">Balance:</span>
+                        <span class="text-xs font-medium">{item.payload.balanceFormatted}</span>
+                      </div>
+                      {#if item.payload.totalTrades > 0}
+                        <div class="flex items-center justify-between gap-8">
+                          <span class="text-xs text-muted-foreground">Trades:</span>
+                          <span class="text-xs font-medium">{item.payload.totalTrades}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-8">
+                          <span class="text-xs text-muted-foreground">Daily P/L:</span>
+                          <span class={`text-xs font-medium ${item.payload.dailyPL > 0 ? 'text-emerald-600' : item.payload.dailyPL < 0 ? 'text-destructive' : ''}`}>
+                            {fmtIdr(item.payload.dailyPL)}
+                          </span>
+                        </div>
+                      {/if}
+                    </div>
+                  {/snippet}
+                </Chart.Tooltip>
+              {/snippet}
+            </AreaChart>
+          </Chart.Container>
+        {:else}
+          <div class="flex items-center justify-center h-64 text-muted-foreground">
+            Add trades to see balance chart
+          </div>
+        {/if}
       </CardContent>
     </Card>
 
