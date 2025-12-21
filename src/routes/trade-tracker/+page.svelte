@@ -16,6 +16,7 @@
 
   type Trade = {
     id: string;
+    date: string;
     lot: number;
     pips: number; // nominal positive
     type: TradeType;
@@ -35,8 +36,8 @@
 
   // Initial trades (contoh)
   let trades: Trade[] = [
-    { id: crypto.randomUUID(), lot: 0.16, pips: 300, type: "loss", note: "Example loss" },
-    { id: crypto.randomUUID(), lot: 0.16, pips: 200, type: "profit", note: "Example win" }
+    { id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0], lot: 0.16, pips: 300, type: "loss", note: "Example loss" },
+    { id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0], lot: 0.16, pips: 200, type: "profit", note: "Example win" }
   ];
 
   // =====================
@@ -57,7 +58,7 @@
   function addTrade() {
     trades = [
       ...trades,
-      { id: crypto.randomUUID(), lot: 0.01, pips: 0, type: "profit", note: "" }
+      { id: crypto.randomUUID(), date: new Date().toISOString().split('T')[0], lot: 0.01, pips: 0, type: "profit", note: "" }
     ];
   }
 
@@ -220,6 +221,7 @@
             <TableHeader>
               <TableRow>
                 <TableHead>#</TableHead>
+                <TableHead>Date</TableHead>
                 <TableHead>Lot</TableHead>
                 <TableHead>Profit / Loss</TableHead>
                 <TableHead>Pips</TableHead>
@@ -233,7 +235,7 @@
             <TableBody>
               {#if rows.length === 0}
                 <TableRow>
-                  <TableCell colspan="{8}" class="py-10 text-center text-muted-foreground">
+                  <TableCell colspan="{9}" class="py-10 text-center text-muted-foreground">
                     Belum ada trade.
                   </TableCell>
                 </TableRow>
@@ -241,6 +243,13 @@
                 {#each rows as r (r.id)}
                   <TableRow>
                     <TableCell>{r.no}</TableCell>
+
+                    <TableCell>
+                      <Input
+                        type="date"
+                        bind:value={trades[r.no - 1].date}
+                      />
+                    </TableCell>
 
                     <TableCell>
                       <Input
