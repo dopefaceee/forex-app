@@ -233,7 +233,7 @@
             <TableBody>
               {#if rows.length === 0}
                 <TableRow>
-                  <TableCell colspan="8" class="py-10 text-center text-muted-foreground">
+                  <TableCell colspan="{8}" class="py-10 text-center text-muted-foreground">
                     Belum ada trade.
                   </TableCell>
                 </TableRow>
@@ -248,7 +248,7 @@
                         step="0.01"
                         min="0"
                         bind:value={trades[r.no - 1].lot}
-                        on:blur={() =>
+                        onblur={() =>
                           (trades[r.no - 1].lot = roundLot2(trades[r.no - 1].lot))
                         }
                       />
