@@ -19,5 +19,10 @@
         Hitung Lot Size (Risk %)
       </Button>
     </a>
+     <a href="/trade-tracker">
+      <Button size="lg">
+        Trade Tracker
+      </Button>
+    </a>
   </div>
 </section>

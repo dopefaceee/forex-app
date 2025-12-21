@@ -13,25 +13,38 @@
   } from "$lib/components/ui/table";
 
   // ----------------------------
-  // Inputs (Indonesia V1)
+  // Inputs
   // ----------------------------
   let balanceIdr = 50_000_000;
 
-  // Mode: "single" or "copytrade"
+  // Mode
   let mode: "single" | "copytrade" = "single";
 
   // Single trade risk (%)
   let riskPercent = 1;
 
-  // Copytrade controls
-  let totalRiskCapPercent = 2; // total risk cap (%) across concurrent positions
-  let maxConcurrentPositions = 4; // max open positions at the same time
-  let entriesPerSignal = 1; // average entries per signal (averaging/scaling in)
+  // Copytrade total risk cap (% across concurrent positions)
+  let totalRiskCapPercent = 2;
 
-  // SL
+  // Copytrade overlap input method
+  let overlapMethod: "manual" | "estimate" = "manual";
+
+  // Manual overlap
+  let maxConcurrentPositions = 4;
+
+  // Estimate overlap (from signals/month + holding style)
+  let signalsPerMonth = 120;
+  let holdingStyle: "scalp" | "intraday" | "swing" = "intraday";
+
+  // Averaging / multi-entry
+  let entriesPerSignal = 1;
+
+  // Stop loss
   let stopLossPips = 300;
 
-  // Fixed assumptions
+  // ----------------------------
+  // Fixed assumptions (Indonesia V1)
+  // ----------------------------
   const USD_TO_IDR = 10_000;
   const PIP_VALUE_USD = 1; // XAUUSD typical: 1 lot ≈ $1/pip
   const PIP_VALUE_IDR = USD_TO_IDR * PIP_VALUE_USD;
@@ -49,15 +62,23 @@
       maximumFractionDigits: 0
     }).format(isFinite(n) ? n : 0);
 
-  // 0.01 lot steps, conservative: floor
+  // Conservative rounding: floor to 0.01 lot
   const floorLot = (x: number) => Math.floor(x * 100) / 100;
-
-  function setRisk(p: number) {
-    riskPercent = p;
-  }
 
   function setMode(m: "single" | "copytrade") {
     mode = m;
+  }
+
+  function setOverlapMethod(m: "manual" | "estimate") {
+    overlapMethod = m;
+  }
+
+  function setHoldingStyle(s: "scalp" | "intraday" | "swing") {
+    holdingStyle = s;
+  }
+
+  function setRisk(p: number) {
+    riskPercent = p;
   }
 
   // ----------------------------
@@ -68,24 +89,45 @@
 
   $: riskPercentSafe = clamp(riskPercent, 0, 100);
   $: totalRiskCapSafe = clamp(totalRiskCapPercent, 0, 100);
-  $: maxConcurrentSafe = Math.floor(clamp(maxConcurrentPositions, 1, 1000));
+
+  $: maxConcurrentManualSafe = Math.floor(clamp(maxConcurrentPositions, 1, 1000));
   $: entriesPerSignalSafe = Math.floor(clamp(entriesPerSignal, 1, 1000));
+
+  $: signalsPerMonthSafe = clamp(signalsPerMonth, 0, 1_000_000);
+
+  // ----------------------------
+  // Overlap estimation
+  // ----------------------------
+  // Simple "overlap factor" mapping (estimation only)
+  // scalp: low overlap, intraday: medium, swing: high
+  $: overlapFactor =
+    holdingStyle === "scalp" ? 0.5 :
+    holdingStyle === "intraday" ? 1.5 :
+    3.0;
+
+  // Convert signals/month -> signals/day
+  $: signalsPerDay = signalsPerMonthSafe / 30;
+
+  // Estimated max concurrent positions (minimum 1)
+  $: estimatedMaxConcurrent = Math.max(1, Math.ceil(signalsPerDay * overlapFactor));
+
+  // Choose max concurrent based on method
+  $: maxConcurrentEffective =
+    overlapMethod === "estimate" ? estimatedMaxConcurrent : maxConcurrentManualSafe;
 
   // ----------------------------
   // Core logic
   // ----------------------------
-  // Effective risk per position (%)
-  // - single: use riskPercent
-  // - copytrade: totalRiskCap / maxConcurrentPositions
+  // Risk per position (%)
   $: riskPerPositionPercent =
     mode === "single"
       ? riskPercentSafe
-      : (maxConcurrentSafe > 0 ? totalRiskCapSafe / maxConcurrentSafe : 0);
+      : (maxConcurrentEffective > 0 ? totalRiskCapSafe / maxConcurrentEffective : 0);
 
-  // Money risk per position (IDR)
+  // Risk money per position (IDR)
   $: riskMoneyPerPositionIdr = balanceSafe * (riskPerPositionPercent / 100);
 
-  // Lot per position (total lot for that one signal/position)
+  // Lot per position
   $: rawLotPerPosition =
     stopLossSafe > 0
       ? riskMoneyPerPositionIdr / (stopLossSafe * PIP_VALUE_IDR)
@@ -93,14 +135,13 @@
 
   $: lotPerPosition = floorLot(rawLotPerPosition);
 
-  // Lot per entry (if averaging/scaling in)
+  // Lot per entry (averaging)
   $: rawLotPerEntry = entriesPerSignalSafe > 0 ? lotPerPosition / entriesPerSignalSafe : 0;
   $: lotPerEntry = floorLot(rawLotPerEntry);
 
-  // Estimated total risk if max concurrent positions are active
-  // (Using conservative rounded lotPerPosition)
+  // Estimated total risk if max concurrent positions are active (based on rounded lot)
   $: estTotalRiskMoneyIdr =
-    maxConcurrentSafe * (stopLossSafe * PIP_VALUE_IDR * lotPerPosition);
+    maxConcurrentEffective * (stopLossSafe * PIP_VALUE_IDR * lotPerPosition);
 
   $: estTotalRiskPercent =
     balanceSafe > 0 ? (estTotalRiskMoneyIdr / balanceSafe) * 100 : 0;
@@ -116,7 +157,7 @@
       <h1 class="text-3xl font-bold tracking-tight">Lot Calculator (Risk %)</h1>
       <p class="text-muted-foreground">
         Asumsi: <b>$1 = Rp10.000</b> dan XAUUSD standar <b>1 lot ≈ $1/pip</b>.
-        Mode <b>Copytrade</b> membagi risiko berdasarkan jumlah posisi aktif bersamaan.
+        Mode <b>Copytrade</b> bisa pakai <b>estimasi posisi aktif</b> dari <b>sinyal/bulan</b> + gaya holding.
       </p>
     </header>
 
@@ -125,11 +166,11 @@
       <Card class="rounded-2xl">
         <CardHeader>
           <CardTitle>Input</CardTitle>
-          <CardDescription>Atur mode, saldo, risk, dan stop loss.</CardDescription>
+          <CardDescription>Atur mode, saldo, risk, sinyal, dan stop loss.</CardDescription>
         </CardHeader>
 
         <CardContent class="space-y-6">
-          <!-- Mode switch -->
+          <!-- Mode -->
           <div class="space-y-2">
             <Label>Mode</Label>
             <div class="flex gap-2">
@@ -151,9 +192,6 @@
                 Copytrade / Multi
               </Button>
             </div>
-            <p class="text-xs text-muted-foreground">
-              Single Trade: 1 posisi. Copytrade: banyak posisi bisa aktif bersamaan.
-            </p>
           </div>
 
           <!-- Balance -->
@@ -167,10 +205,9 @@
               step="1000"
               bind:value={balanceIdr}
             />
-            <p class="text-xs text-muted-foreground">Contoh: 50000000 = Rp50 juta</p>
           </div>
 
-          <!-- Risk inputs -->
+          <!-- Single mode risk -->
           {#if mode === "single"}
             <div class="space-y-2">
               <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -194,13 +231,12 @@
               {/if}
             </div>
           {:else}
+            <!-- Copytrade controls -->
             <div class="space-y-4">
               <div class="space-y-2">
                 <Label for="cap">Total Risk Cap (%)</Label>
                 <Input id="cap" type="number" min="0" step="0.1" bind:value={totalRiskCapPercent} />
-                <p class="text-xs text-muted-foreground">
-                  Batas risiko total yang boleh aktif bersamaan (contoh 2%–5%).
-                </p>
+                <p class="text-xs text-muted-foreground">Batas risiko total yang boleh aktif bersamaan.</p>
                 {#if riskWarningCap}
                   <p class="text-sm text-destructive">
                     Total risk cap di atas 5% cukup agresif untuk copytrade.
@@ -208,19 +244,90 @@
                 {/if}
               </div>
 
+              <!-- Overlap method -->
               <div class="space-y-2">
-                <Label for="concurrent">Max Posisi Aktif Bersamaan</Label>
-                <Input id="concurrent" type="number" min="1" step="1" bind:value={maxConcurrentPositions} />
+                <Label>Metode Overlap (Posisi Aktif)</Label>
+                <div class="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={overlapMethod === "manual" ? "default" : "outline"}
+                    onclick={() => setOverlapMethod("manual")}
+                  >
+                    Manual
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={overlapMethod === "estimate" ? "default" : "outline"}
+                    onclick={() => setOverlapMethod("estimate")}
+                  >
+                    Estimasi dari Sinyal
+                  </Button>
+                </div>
+
                 <p class="text-xs text-muted-foreground">
-                  Perkiraan posisi yang bisa open bersamaan (overlap).
+                  Manual kalau kamu sudah tahu biasanya berapa posisi overlap. Estimasi kalau cuma tahu sinyal/bulan.
                 </p>
               </div>
 
+              {#if overlapMethod === "manual"}
+                <div class="space-y-2">
+                  <Label for="concurrent">Max Posisi Aktif Bersamaan</Label>
+                  <Input id="concurrent" type="number" min="1" step="1" bind:value={maxConcurrentPositions} />
+                </div>
+              {:else}
+                <div class="space-y-4">
+                  <div class="space-y-2">
+                    <Label for="signals">Total Sinyal per Bulan</Label>
+                    <Input id="signals" type="number" min="0" step="1" bind:value={signalsPerMonth} />
+                  </div>
+
+                  <div class="space-y-2">
+                    <Label>Gaya Holding</Label>
+                    <div class="flex gap-2 flex-wrap">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={holdingStyle === "scalp" ? "default" : "outline"}
+                        onclick={() => setHoldingStyle("scalp")}
+                      >
+                        Scalp
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={holdingStyle === "intraday" ? "default" : "outline"}
+                        onclick={() => setHoldingStyle("intraday")}
+                      >
+                        Intraday
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={holdingStyle === "swing" ? "default" : "outline"}
+                        onclick={() => setHoldingStyle("swing")}
+                      >
+                        Swing
+                      </Button>
+                    </div>
+                    <p class="text-xs text-muted-foreground">
+                      Ini hanya estimasi untuk menentukan posisi overlap. Scalping overlap rendah, swing overlap tinggi.
+                    </p>
+                    <p class="text-sm">
+                      Estimasi max posisi aktif: <b>{estimatedMaxConcurrent}</b>
+                    </p>
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Averaging -->
               <div class="space-y-2">
-                <Label for="entries">Rata-rata Entry per Sinyal</Label>
+                <Label for="entries">Maksimal Entry per Sinyal (Averaging)</Label>
                 <Input id="entries" type="number" min="1" step="1" bind:value={entriesPerSignal} />
                 <p class="text-xs text-muted-foreground">
-                  Kalau kamu averaging/scaling-in (contoh 2–3), lot akan dibagi per entry.
+                  Jika 2–3 entry per sinyal, lot per entry akan dibagi.
                 </p>
               </div>
             </div>
@@ -230,9 +337,6 @@
           <div class="space-y-2">
             <Label for="sl">Stop Loss (Pips)</Label>
             <Input id="sl" type="number" min="0" step="1" bind:value={stopLossPips} />
-            <p class="text-xs text-muted-foreground">
-              Isi jarak entry ke SL dalam pips (contoh XAUUSD: 300).
-            </p>
           </div>
 
           <div class="rounded-xl border p-4 space-y-2">
@@ -249,9 +353,7 @@
       <Card class="rounded-2xl">
         <CardHeader>
           <CardTitle>Hasil</CardTitle>
-          <CardDescription>
-            Rekomendasi lot berdasarkan risiko dan stop loss.
-          </CardDescription>
+          <CardDescription>Rekomendasi lot + estimasi total risk aktif (khusus copytrade).</CardDescription>
         </CardHeader>
 
         <CardContent class="space-y-4">
@@ -275,6 +377,16 @@
                   <TableCell>{fmtIdr(balanceSafe)}</TableCell>
                 </TableRow>
 
+                <TableRow>
+                  <TableCell class="font-medium">Stop Loss</TableCell>
+                  <TableCell>{stopLossSafe.toFixed(0)} pips</TableCell>
+                </TableRow>
+
+                <TableRow>
+                  <TableCell class="font-medium">Nilai pip (1 lot)</TableCell>
+                  <TableCell>{fmtIdr(PIP_VALUE_IDR)} / pip</TableCell>
+                </TableRow>
+
                 {#if mode === "single"}
                   <TableRow>
                     <TableCell class="font-medium">Risk (%)</TableCell>
@@ -288,7 +400,12 @@
 
                   <TableRow>
                     <TableCell class="font-medium">Max Posisi Aktif</TableCell>
-                    <TableCell>{maxConcurrentSafe}</TableCell>
+                    <TableCell>
+                      {maxConcurrentEffective}
+                      {#if overlapMethod === "estimate"}
+                        <span class="text-muted-foreground"> (estimasi)</span>
+                      {/if}
+                    </TableCell>
                   </TableRow>
 
                   <TableRow>
@@ -305,16 +422,6 @@
                 <TableRow>
                   <TableCell class="font-medium">Risk Uang (per posisi)</TableCell>
                   <TableCell>{fmtIdr(riskMoneyPerPositionIdr)}</TableCell>
-                </TableRow>
-
-                <TableRow>
-                  <TableCell class="font-medium">Stop Loss</TableCell>
-                  <TableCell>{stopLossSafe.toFixed(0)} pips</TableCell>
-                </TableRow>
-
-                <TableRow>
-                  <TableCell class="font-medium">Nilai pip (1 lot)</TableCell>
-                  <TableCell>{fmtIdr(PIP_VALUE_IDR)} / pip</TableCell>
                 </TableRow>
 
                 <TableRow>
@@ -342,7 +449,8 @@
           <div class="rounded-xl bg-muted p-4 text-sm text-muted-foreground space-y-1">
             <div class="font-medium text-foreground">Catatan</div>
             <div>
-              Lot dibulatkan <b>turun</b> ke 0.01 agar tidak melewati risk. Nilai aktual bisa beda tergantung broker.
+              Lot dibulatkan <b>turun</b> ke 0.01 agar tidak melewati risk. Mode estimasi overlap memakai asumsi gaya holding,
+              jadi hasilnya bukan prediksi, tapi <b>kontrol risiko</b>.
             </div>
           </div>
 
