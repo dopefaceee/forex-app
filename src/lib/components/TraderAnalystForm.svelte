@@ -216,10 +216,10 @@
           </div>
         </div>
       {:else if tradersList.length > 0}
-        <div class="space-y-2 max-h-64 overflow-y-auto">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
           {#each tradersList as trader}
-            <div class="flex justify-between items-center p-3 bg-muted rounded-lg">
-              <div class="cursor-pointer" onclick={() => goToTraderDetail(trader)}>
+            <div class="flex justify-between items-center p-4 bg-muted rounded-lg">
+              <div class="cursor-pointer flex-1" onclick={() => goToTraderDetail(trader)}>
                 <div class="font-medium text-blue-600 hover:text-blue-800 hover:underline">{trader.name}</div>
                 <div class="text-xs text-muted-foreground">
                   Added: {new Date(trader.created_at).toLocaleDateString('id-ID', {
@@ -234,6 +234,7 @@
                 variant="outline" 
                 size="sm" 
                 onclick={() => deleteTrader(trader.id)}
+                class="ml-2"
               >
                 Delete
               </Button>

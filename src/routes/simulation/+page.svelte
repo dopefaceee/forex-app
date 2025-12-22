@@ -12,7 +12,7 @@
 </script>
 
 <section class="min-h-screen bg-background p-6">
-  <div class="max-w-4xl mx-auto space-y-8">
+  <div class="w-full mx-auto space-y-8">
     <div class="text-center space-y-6">
       <h1 class="text-4xl font-bold">Trading Simulation</h1>
       <p class="text-xl text-muted-foreground">
