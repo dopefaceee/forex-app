@@ -11,17 +11,17 @@
   }
 </script>
 
-<section class="min-h-screen bg-background p-6">
-  <div class="w-full mx-auto space-y-8">
-    <div class="text-center space-y-6">
-      <h1 class="text-4xl font-bold">Trading Simulation</h1>
-      <p class="text-xl text-muted-foreground">
+<section class="min-h-screen bg-background p-4 sm:p-6">
+  <div class="w-full mx-auto space-y-6 sm:space-y-8">
+    <div class="text-center space-y-4 sm:space-y-6">
+      <h1 class="text-3xl sm:text-4xl font-bold">Trading Simulation</h1>
+      <p class="text-lg sm:text-xl text-muted-foreground">
         Manage trader analysts and their trading data
       </p>
     </div>
 
     <!-- Trader Analyst Management -->
-    <div class="space-y-6">
+    <div class="space-y-4 sm:space-y-6">
       <TraderAnalystForm onTraderAdded={handleTraderAdded} />
     </div>
   </div>
