@@ -207,6 +207,9 @@
   let simulationLot = 0.01; // Default 0.01 lot
   let simulationMonth: number | null = null;
   let simulationYear: number | null = null;
+  let simulationUseCustomRange = false;
+  let simulationStartDate = '';
+  let simulationEndDate = '';
   let simulationResults: any = null;
   let isSimulating = false;
 
@@ -220,17 +223,41 @@
   }).filter(month => month !== null))].sort((a, b) => a - b);
 
   function runSimulation() {
-    if (!simulationYear || simulationMonth === null) {
-      alert('Please select year and month for simulation');
-      return;
+    // Validation based on selected mode
+    if (simulationUseCustomRange) {
+      if (!simulationStartDate && !simulationEndDate) {
+        alert('Please select at least one date for simulation');
+        return;
+      }
+    } else {
+      if (!simulationYear || simulationMonth === null) {
+        alert('Please select year and month for simulation');
+        return;
+      }
     }
 
     isSimulating = true;
 
-    // Filter trades for selected month/year and sort by date ascending (earliest first)
+    // Filter trades based on selected mode and sort by date ascending (earliest first)
     const simulationTrades = trades.filter(trade => {
       const date = new Date(trade.created_at);
-      return date.getFullYear() === simulationYear && date.getMonth() === simulationMonth;
+      
+      if (simulationUseCustomRange) {
+        // Use custom date range
+        if (simulationStartDate) {
+          const start = new Date(simulationStartDate);
+          if (date < start) return false;
+        }
+        if (simulationEndDate) {
+          const end = new Date(simulationEndDate);
+          end.setHours(23, 59, 59, 999); // Include the entire end date
+          if (date > end) return false;
+        }
+        return true;
+      } else {
+        // Use year/month filter
+        return date.getFullYear() === simulationYear && date.getMonth() === simulationMonth;
+      }
     }).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
     if (simulationTrades.length === 0) {
@@ -287,103 +314,127 @@
       return [];
     }
 
-    const dailyData = new Map();
+    // Sort trades by date first to ensure proper order
+    const sortedTrades = [...tradeResults].sort((a, b) => {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
+    // Group trades by date (same day trades will be accumulated)
+    const dailyTradesMap = new Map();
     
-    // Process trades and group by date with error handling
-    tradeResults.forEach((trade) => {
+    sortedTrades.forEach((trade) => {
       if (!trade || !trade.created_at || typeof trade.balanceAfter !== 'number') {
-        return; // Skip invalid trades
+        return;
       }
 
       try {
         const tradeDate = new Date(trade.created_at);
         if (isNaN(tradeDate.getTime())) {
-          return; // Skip invalid dates
+          return;
         }
         
+        // Use date only (no time) for grouping same-day trades
         const dateKey = tradeDate.toISOString().split('T')[0];
-        const existing = dailyData.get(dateKey);
         
-        if (existing) {
-          existing.endBalance = trade.balanceAfter;
-          existing.trades += 1;
-          existing.dailyPnL += trade.simulatedPnL || 0;
-          existing.details = existing.trades === 1 ? '1 trade' : `${existing.trades} trades`;
-        } else {
-          dailyData.set(dateKey, {
-            date: new Date(dateKey + 'T12:00:00Z'),
-            balance: trade.balanceAfter,
-            endBalance: trade.balanceAfter,
-            trades: 1,
-            dailyPnL: trade.simulatedPnL || 0,
-            details: '1 trade',
-            dateKey: dateKey
-          });
+        if (!dailyTradesMap.has(dateKey)) {
+          dailyTradesMap.set(dateKey, []);
         }
+        dailyTradesMap.get(dateKey).push(trade);
+        
       } catch (error) {
         console.warn('Skipping invalid trade data:', error);
       }
     });
+
+    // Determine the full date range to display
+    let startDate, endDate;
     
-    // Sort daily data by date first
-    const sortedEntries = Array.from(dailyData.entries())
-      .sort(([a], [b]) => a.localeCompare(b));
-    
-    // Build final chart data array
+    if (simulationUseCustomRange) {
+      startDate = simulationStartDate ? new Date(simulationStartDate) : new Date(sortedTrades[0].created_at);
+      endDate = simulationEndDate ? new Date(simulationEndDate) : new Date(sortedTrades[sortedTrades.length - 1].created_at);
+    } else {
+      // Use year/month range
+      startDate = new Date(simulationYear, simulationMonth, 1);
+      endDate = new Date(simulationYear, simulationMonth + 1, 0); // Last day of the month
+    }
+
+    // Generate chart data for EVERY day in the range
     const chartData = [];
+    let currentBalance = startingBalance;
+    let totalTradeCount = 0;
     
-    // Add starting balance point if we have data
-    if (sortedEntries.length > 0) {
-      const firstDate = new Date(sortedEntries[0][0] + 'T12:00:00Z');
-      const dayBefore = new Date(firstDate.getTime() - 24 * 60 * 60 * 1000);
+    // Iterate through every day in the range
+    const currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      const dateKey = currentDate.toISOString().split('T')[0];
+      const dayTrades = dailyTradesMap.get(dateKey) || [];
       
-      chartData.push({
-        date: dayBefore,
-        balance: startingBalance,
-        startBalance: startingBalance,
-        endBalance: startingBalance,
-        trades: 0,
-        dailyPnL: 0,
-        details: 'Starting Balance',
-        isStarting: true,
-        percentChange: 0,
-        isProfit: false,
-        isLoss: false
-      });
+      if (dayTrades.length > 0) {
+        // Day with trades - update balance and trade count
+        const lastTradeOfDay = dayTrades[dayTrades.length - 1];
+        currentBalance = lastTradeOfDay.balanceAfter;
+        
+        // Calculate total P&L for this day
+        const dayPnL = dayTrades.reduce((sum, trade) => sum + (trade.simulatedPnL || 0), 0);
+        
+        // Update trade count
+        totalTradeCount += dayTrades.length;
+        
+        chartData.push({
+          date: new Date(currentDate),
+          balance: currentBalance,
+          trades: totalTradeCount,
+          dailyTrades: dayTrades.length,
+          simulatedPnL: dayPnL,
+          details: dayTrades.length === 1 
+            ? `${currentDate.toLocaleDateString('en-GB')}: ${dayPnL >= 0 ? '+' : ''}$${dayPnL.toFixed(2)}` 
+            : `${currentDate.toLocaleDateString('en-GB')}: ${dayTrades.length} trades, ${dayPnL >= 0 ? '+' : ''}$${dayPnL.toFixed(2)}`,
+          isProfit: dayPnL > 0,
+          isLoss: dayPnL < 0,
+          hasTrades: true
+        });
+      } else {
+        // Day without trades - keep same balance
+        chartData.push({
+          date: new Date(currentDate),
+          balance: currentBalance,
+          trades: totalTradeCount,
+          dailyTrades: 0,
+          simulatedPnL: 0,
+          details: `${currentDate.toLocaleDateString('en-GB')}: No trades`,
+          isProfit: false,
+          isLoss: false,
+          hasTrades: false
+        });
+      }
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
     }
     
-    // Process sorted daily data with correct balance progression
-    let previousBalance = startingBalance;
-    
-    sortedEntries.forEach(([dateKey, item]) => {
-      // Calculate percentage change from previous balance
-      const percentChange = previousBalance !== 0 ? ((item.endBalance - previousBalance) / previousBalance) * 100 : 0;
-      
-      chartData.push({
-        ...item,
-        startBalance: previousBalance,
-        percentChange: percentChange,
-        isProfit: item.dailyPnL > 0,
-        isLoss: item.dailyPnL < 0
-      });
-      
-      previousBalance = item.endBalance;
-    });
-    
-    // Final validation
-    return chartData.filter(item => 
-      item && 
-      item.date instanceof Date && 
-      !isNaN(item.date.getTime()) && 
-      typeof item.balance === 'number' && 
-      !isNaN(item.balance)
-    );
+    return chartData;
   }
 
   function clearSimulation() {
     simulationResults = null;
     simulationMonth = null;
     simulationYear = null;
+    simulationUseCustomRange = false;
+    simulationStartDate = '';
+    simulationEndDate = '';
+  }
+
+  function toggleSimulationMode() {
+    simulationUseCustomRange = !simulationUseCustomRange;
+    // Clear existing settings when switching modes
+    if (simulationUseCustomRange) {
+      simulationMonth = null;
+      simulationYear = null;
+    } else {
+      simulationStartDate = '';
+      simulationEndDate = '';
+    }
   }
 
   // Helper function for clean date formatting
@@ -464,23 +515,24 @@
 
 <section class="min-h-screen bg-background">
   <!-- Back Navigation - Fixed at top -->
-  <div class="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/40 px-6 py-3">
-    <div class="max-w-4xl mx-auto">
+  <div class="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/40 px-4 sm:px-6 py-3">
+    <div class="max-w-full mx-auto">
       <Button variant="ghost" onclick={goBack} class="text-muted-foreground hover:text-foreground -ml-2">
         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
         </svg>
-        Back to Simulation
+        <span class="hidden sm:inline">Back to Simulation</span>
+        <span class="sm:hidden">Back</span>
       </Button>
     </div>
   </div>
 
-  <div class="max-w-4xl mx-auto px-6 py-8 space-y-8">
+  <div class="w-full px-4 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-8">
     <!-- Header -->
-    <div class="text-center space-y-4">
-      <h1 class="text-3xl font-bold">Trader Details</h1>
+    <div class="text-center space-y-2 sm:space-y-4">
+      <h1 class="text-2xl sm:text-3xl font-bold">Trader Details</h1>
       {#if trader}
-        <p class="text-xl text-muted-foreground">{trader.name}</p>
+        <p class="text-lg sm:text-xl text-muted-foreground">{trader.name}</p>
       {/if}
     </div>
 
@@ -507,18 +559,18 @@
           <CardTitle>Trader Information</CardTitle>
         </CardHeader>
         <CardContent>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label class="text-sm font-medium text-muted-foreground">Name</label>
-              <p class="text-lg font-semibold">{trader.name}</p>
+              <p class="text-base sm:text-lg font-semibold break-words">{trader.name}</p>
             </div>
             <div>
               <label class="text-sm font-medium text-muted-foreground">ID</label>
-              <p class="text-lg">{trader.secure_id}</p>
+              <p class="text-base sm:text-lg break-all">{trader.secure_id}</p>
             </div>
             <div>
               <label class="text-sm font-medium text-muted-foreground">Added Date</label>
-              <p class="text-lg">{new Date(trader.created_at).toLocaleDateString('id-ID', {
+              <p class="text-base sm:text-lg">{new Date(trader.created_at).toLocaleDateString('id-ID', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -527,7 +579,7 @@
             </div>
             <div>
               <label class="text-sm font-medium text-muted-foreground">Last Updated</label>
-              <p class="text-lg">{new Date(trader.updated_at).toLocaleDateString('id-ID', {
+              <p class="text-base sm:text-lg">{new Date(trader.updated_at).toLocaleDateString('id-ID', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -543,9 +595,9 @@
         <CardHeader>
           <CardTitle>Trading Simulation</CardTitle>
         </CardHeader>
-        <CardContent class="space-y-6">
+        <CardContent class="space-y-4 sm:space-y-6">
           <!-- Simulation Form -->
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div>
               <Label for="sim-balance">Balance (USD)</Label>
               <Input
@@ -573,42 +625,95 @@
                 max="10"
               />
             </div>
-            
-            <div>
-              <Label for="sim-year">Year</Label>
-              <select 
-                id="sim-year"
-                bind:value={simulationYear}
-                class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value={null}>Select year...</option>
-                {#each availableYears as year}
-                  <option value={year}>{year}</option>
-                {/each}
-              </select>
-            </div>
-            
-            <div>
-              <Label for="sim-month">Month</Label>
-              <select 
-                id="sim-month"
-                bind:value={simulationMonth}
-                disabled={!simulationYear}
-                class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-              >
-                <option value={null}>Select month...</option>
-                {#each simulationAvailableMonths as monthNum}
-                  <option value={monthNum}>{months[monthNum].name}</option>
-                {/each}
-              </select>
+
+            <!-- Period Selection Mode Toggle -->
+            <div class="sm:col-span-2">
+              <Label>Period Selection</Label>
+              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2">
+                <Button 
+                  variant={!simulationUseCustomRange ? "default" : "outline"} 
+                  size="sm" 
+                  onclick={() => !simulationUseCustomRange || toggleSimulationMode()}
+                  disabled={!simulationUseCustomRange}
+                  class="flex-1 sm:flex-none"
+                >
+                  Year/Month
+                </Button>
+                <Button 
+                  variant={simulationUseCustomRange ? "default" : "outline"} 
+                  size="sm" 
+                  onclick={() => simulationUseCustomRange || toggleSimulationMode()}
+                  disabled={simulationUseCustomRange}
+                  class="flex-1 sm:flex-none"
+                >
+                  Custom Range
+                </Button>
+              </div>
             </div>
           </div>
 
+          <!-- Period Selection Fields -->
+          {#if !simulationUseCustomRange}
+            <!-- Year/Month Selection -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <Label for="sim-year">Year</Label>
+                <select 
+                  id="sim-year"
+                  bind:value={simulationYear}
+                  class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value={null}>Select year...</option>
+                  {#each availableYears as year}
+                    <option value={year}>{year}</option>
+                  {/each}
+                </select>
+              </div>
+            
+              <div>
+                <Label for="sim-month">Month</Label>
+                <select 
+                  id="sim-month"
+                  bind:value={simulationMonth}
+                  disabled={!simulationYear}
+                  class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                >
+                  <option value={null}>Select month...</option>
+                  {#each simulationAvailableMonths as monthNum}
+                    <option value={monthNum}>{months[monthNum].name}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
+          {:else}
+            <!-- Custom Date Range Selection -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <Label for="sim-start-date">Start Date</Label>
+                <Input
+                  id="sim-start-date"
+                  type="date"
+                  bind:value={simulationStartDate}
+                  class="w-full"
+                />
+              </div>
+              <div>
+                <Label for="sim-end-date">End Date</Label>
+                <Input
+                  id="sim-end-date"
+                  type="date"
+                  bind:value={simulationEndDate}
+                  class="w-full"
+                />
+              </div>
+            </div>
+          {/if}
+
           <!-- Simulation Actions -->
-          <div class="flex gap-4">
+          <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Button 
               onclick={runSimulation}
-              disabled={isSimulating || !simulationYear || simulationMonth === null}
+              disabled={isSimulating || (simulationUseCustomRange ? (!simulationStartDate && !simulationEndDate) : (!simulationYear || simulationMonth === null))}
             >
               {isSimulating ? 'Simulating...' : 'Run Simulation'}
             </Button>
@@ -623,50 +728,66 @@
           <!-- Simulation Results -->
           {#if simulationResults}
             <div class="space-y-4 mt-6 pt-6 border-t">
-              <h3 class="text-lg font-semibold">Simulation Results - {simulationYear} {months[simulationMonth].name}</h3>
+              <h3 class="text-lg font-semibold">
+                Simulation Results - 
+                {#if simulationUseCustomRange}
+                  {#if simulationStartDate && simulationEndDate}
+                    {new Date(simulationStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} 
+                    to {new Date(simulationEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {:else if simulationStartDate}
+                    From {new Date(simulationStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {:else if simulationEndDate}
+                    Until {new Date(simulationEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {:else}
+                    Custom Range
+                  {/if}
+                {:else}
+                  {simulationYear} {months[simulationMonth].name}
+                {/if}
+              </h3>
               
               <!-- Results Summary -->
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div class="text-center p-4 bg-muted rounded-lg">
-                  <p class="text-sm text-muted-foreground">Starting Balance</p>
-                  <p class="text-lg font-bold">{formatUSD(simulationResults.startingBalance)}</p>
-                  <p class="text-xs text-muted-foreground">{formatIDR(simulationResults.startingBalance)}</p>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <p class="text-xs sm:text-sm text-muted-foreground">Starting Balance</p>
+                  <p class="text-base sm:text-lg font-bold break-words">{formatUSD(simulationResults.startingBalance)}</p>
+                  <p class="text-xs text-muted-foreground hidden sm:block">{formatIDR(simulationResults.startingBalance)}</p>
                 </div>
                 
-                <div class="text-center p-4 bg-muted rounded-lg">
-                  <p class="text-sm text-muted-foreground">Ending Balance</p>
-                  <p class="text-lg font-bold {simulationResults.endingBalance > simulationResults.startingBalance ? 'text-green-600' : 'text-red-600'}">
+                <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <p class="text-xs sm:text-sm text-muted-foreground">Ending Balance</p>
+                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.endingBalance > simulationResults.startingBalance ? 'text-green-600' : 'text-red-600'}">
                     {formatUSD(simulationResults.endingBalance)}
                   </p>
-                  <p class="text-xs text-muted-foreground">{formatIDR(simulationResults.endingBalance)}</p>
+                  <p class="text-xs text-muted-foreground hidden sm:block">{formatIDR(simulationResults.endingBalance)}</p>
                 </div>
                 
-                <div class="text-center p-4 bg-muted rounded-lg">
-                  <p class="text-sm text-muted-foreground">Total P&L</p>
-                  <p class="text-lg font-bold {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
+                <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <p class="text-xs sm:text-sm text-muted-foreground">Total P&L</p>
+                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
                     {simulationResults.totalPnL >= 0 ? '+' : ''}{formatUSD(simulationResults.totalPnL)}
                   </p>
-                  <p class="text-xs text-muted-foreground">{simulationResults.totalPnL >= 0 ? '+' : ''}{formatIDR(simulationResults.totalPnL)}</p>
-                  <p class="text-xs font-medium {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
+                  <p class="text-xs text-muted-foreground hidden sm:block">{simulationResults.totalPnL >= 0 ? '+' : ''}{formatIDR(simulationResults.totalPnL)}</p>
+                  <p class="text-xs sm:text-sm font-medium {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
                     {simulationResults.totalPnL >= 0 ? '+' : ''}{((simulationResults.totalPnL / simulationResults.startingBalance) * 100).toFixed(2)}%
                   </p>
                 </div>
                 
-                <div class="text-center p-4 bg-muted rounded-lg">
-                  <p class="text-sm text-muted-foreground">Win Rate</p>
-                  <p class="text-lg font-bold">{simulationResults.winRate.toFixed(1)}%</p>
+                <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <p class="text-xs sm:text-sm text-muted-foreground">Win Rate</p>
+                  <p class="text-base sm:text-lg font-bold">{simulationResults.winRate.toFixed(1)}%</p>
                   <p class="text-xs text-muted-foreground">{simulationResults.winningTrades}W / {simulationResults.losingTrades}L</p>
                 </div>
               </div>
 
               <!-- Balance Progression Chart -->
-              <div class="mt-6">
-                <h4 class="text-md font-semibold mb-4">Balance Progression Chart</h4>
+              <div class="mt-4 sm:mt-6">
+                <h4 class="text-sm sm:text-md font-semibold mb-3 sm:mb-4">Balance Progression Chart</h4>
                 {#if simulationResults.chartData && simulationResults.chartData.length > 1}
                   {@const validChartData = simulationResults.chartData.filter(d => d && d.date && typeof d.balance === 'number')}
                   {console.log('Chart data exists:', simulationResults.chartData.length, 'Valid chart data:', validChartData.length)}
                   {#if validChartData.length > 1}
-                    <Chart.Container config={chartConfig} class="aspect-auto h-[300px] w-full">
+                    <Chart.Container config={chartConfig} class="aspect-auto h-[250px] sm:h-[400px] w-full">
                       <AreaChart
                         data={validChartData}
                         x="date"
@@ -711,7 +832,7 @@
                       </AreaChart>
                     </Chart.Container>
                   {:else}
-                    <div class="h-[300px] flex items-center justify-center border rounded-lg bg-muted/10">
+                    <div class="h-[250px] sm:h-[400px] flex items-center justify-center border rounded-lg bg-muted/10">
                       <div class="text-center text-muted-foreground">
                         <p class="text-lg">Insufficient valid chart data</p>
                         <p class="text-sm">Found {validChartData.length} valid points, need at least 2</p>
@@ -720,7 +841,7 @@
                     </div>
                   {/if}
                 {:else}
-                  <div class="h-[300px] flex items-center justify-center border rounded-lg bg-muted/10">
+                  <div class="h-[250px] sm:h-[400px] flex items-center justify-center border rounded-lg bg-muted/10">
                     <div class="text-center text-muted-foreground">
                       <p class="text-lg">No chart data generated</p>
                       <p class="text-sm">
@@ -736,7 +857,7 @@
               </div>
 
               <!-- Simulation Trade Results Table -->
-              <div class="overflow-x-auto">
+              <div class="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -745,12 +866,13 @@
                       <TableHead>Pips</TableHead>
                       <TableHead>Simulated P&L</TableHead>
                       <TableHead>Balance After</TableHead>
+                      <TableHead class="w-12">Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {#each simulationResults.trades as trade}
                       <TableRow>
-                        <TableCell class="text-xs">{formatDateTime(trade.created_at)}</TableCell>
+                        <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
                         <TableCell class="font-medium">{trade.symbol}</TableCell>
                         <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
                           {formatPips(trade.pips)}
@@ -762,6 +884,21 @@
                         <TableCell class="font-medium">
                           <div>{formatUSD(trade.balanceAfter)}</div>
                           <div class="text-xs text-muted-foreground">{formatIDR(trade.balanceAfter)}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onclick={() => deleteTrade(trade.id)}
+                            disabled={deletingTradeId === trade.id}
+                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                          >
+                            {#if deletingTradeId === trade.id}
+                              <div class="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
+                            {:else}
+                              <Trash2 class="h-4 w-4" />
+                            {/if}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     {/each}
@@ -808,7 +945,7 @@
             <CardTitle>Month Filter for {selectedYear}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div class="grid grid-cols-6 md:grid-cols-12 gap-2">
+            <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-12 gap-2">
               {#each months as month}
                 {@const hasData = availableMonths.includes(month.number)}
                 <button
@@ -860,7 +997,7 @@
                 </div>
               </div>
             {:else}
-              <div class="overflow-x-auto">
+              <div class="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -884,8 +1021,8 @@
                         <TableCell class="text-red-500">{formatPrice(trade.sl)}</TableCell>
                         <TableCell class="text-green-500">{formatPrice(trade.tp)}</TableCell>
                         <TableCell>{formatPrice(trade.close_price)}</TableCell>
-                        <TableCell class="text-xs">{formatDateTime(trade.created_at)}</TableCell>
-                        <TableCell class="text-xs">{formatDateTime(trade.close_time)}</TableCell>
+                        <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
+                        <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.close_time)}</TableCell>
                         <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
                           {formatPips(trade.pips)}
                         </TableCell>
@@ -898,7 +1035,7 @@
                             size="sm" 
                             onclick={() => deleteTrade(trade.id)}
                             disabled={deletingTradeId === trade.id}
-                            class="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600"
                           >
                             {#if deletingTradeId === trade.id}
                               <div class="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
