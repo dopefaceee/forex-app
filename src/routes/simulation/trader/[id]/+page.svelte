@@ -42,7 +42,7 @@
       const { data, error: fetchError } = await supabase
         .from('trader_analysts')
         .select('*')
-        .eq('id', traderId)
+        .eq('secure_id', traderId)
         .single();
 
       if (fetchError) {
@@ -69,7 +69,7 @@
       const { data, error: fetchError } = await supabase
         .from('trades')
         .select('*')
-        .eq('trader_id', traderId)
+        .eq('secure_trader_id', traderId)
         .order('created_at', { ascending: false });
 
       if (fetchError) {
@@ -261,72 +261,9 @@
     const winRate = tradeResults.length > 0 ? (winningTrades / tradeResults.length) * 100 : 0;
 
     // Prepare chart data for balance progression (accumulate by date)
-    let chartData = [];
-    
-    if (tradeResults.length > 0) {
-      const dailyData = new Map();
-      
-      // Process trades and group by date
-      tradeResults.forEach((trade, index) => {
-        try {
-          const tradeDate = new Date(trade.created_at);
-          if (isNaN(tradeDate.getTime())) {
-            console.warn('Invalid date:', trade.created_at);
-            return;
-          }
-          
-          const dateKey = tradeDate.toISOString().split('T')[0]; // Use YYYY-MM-DD format
-          const existing = dailyData.get(dateKey);
-          
-          if (existing) {
-            // Update existing day
-            existing.balance = trade.balanceAfter;
-            existing.trades += 1;
-            existing.dailyPnL += trade.simulatedPnL || 0;
-            existing.details = existing.trades === 1 ? '1 trade' : `${existing.trades} trades`;
-          } else {
-            // New day
-            dailyData.set(dateKey, {
-              date: new Date(dateKey + 'T12:00:00Z'), // Use noon UTC to avoid timezone issues
-              balance: trade.balanceAfter || simulationBalance,
-              trades: 1,
-              dailyPnL: trade.simulatedPnL || 0,
-              details: '1 trade'
-            });
-          }
-        } catch (error) {
-          console.error('Error processing trade for chart:', error, trade);
-        }
-      });
-      
-      // Add starting balance point if we have data
-      const sortedDates = Array.from(dailyData.keys()).sort();
-      if (sortedDates.length > 0) {
-        const firstDate = new Date(sortedDates[0]);
-        const dayBefore = new Date(firstDate.getTime() - 24 * 60 * 60 * 1000);
-        
-        chartData.push({
-          date: dayBefore,
-          balance: simulationBalance,
-          trades: 0,
-          dailyPnL: 0,
-          details: 'Starting Balance'
-        });
-      }
-      
-      // Convert to array and sort by date
-      chartData.push(...Array.from(dailyData.values()));
-      chartData.sort((a, b) => a.date.getTime() - b.date.getTime());
-      
-      // Validate chart data
-      chartData = chartData.filter(item => {
-        return item && 
-               item.date && 
-               !isNaN(item.date.getTime()) && 
-               typeof item.balance === 'number' && 
-               !isNaN(item.balance);
-      });
-    }
+    const chartData = generateChartData(tradeResults, simulationBalance);
+    console.log('Generated chart data:', chartData);
+    console.log('Chart data length:', chartData.length);
 
     simulationResults = {
       trades: tradeResults,
@@ -340,7 +277,107 @@
       chartData: chartData
     };
 
+    console.log('Simulation results:', simulationResults);
+
     isSimulating = false;
+  }
+
+  function generateChartData(tradeResults, startingBalance) {
+    if (!tradeResults || tradeResults.length === 0) {
+      return [];
+    }
+
+    const dailyData = new Map();
+    
+    // Process trades and group by date with error handling
+    tradeResults.forEach((trade) => {
+      if (!trade || !trade.created_at || typeof trade.balanceAfter !== 'number') {
+        return; // Skip invalid trades
+      }
+
+      try {
+        const tradeDate = new Date(trade.created_at);
+        if (isNaN(tradeDate.getTime())) {
+          return; // Skip invalid dates
+        }
+        
+        const dateKey = tradeDate.toISOString().split('T')[0];
+        const existing = dailyData.get(dateKey);
+        
+        if (existing) {
+          existing.endBalance = trade.balanceAfter;
+          existing.trades += 1;
+          existing.dailyPnL += trade.simulatedPnL || 0;
+          existing.details = existing.trades === 1 ? '1 trade' : `${existing.trades} trades`;
+        } else {
+          dailyData.set(dateKey, {
+            date: new Date(dateKey + 'T12:00:00Z'),
+            balance: trade.balanceAfter,
+            endBalance: trade.balanceAfter,
+            trades: 1,
+            dailyPnL: trade.simulatedPnL || 0,
+            details: '1 trade',
+            dateKey: dateKey
+          });
+        }
+      } catch (error) {
+        console.warn('Skipping invalid trade data:', error);
+      }
+    });
+    
+    // Sort daily data by date first
+    const sortedEntries = Array.from(dailyData.entries())
+      .sort(([a], [b]) => a.localeCompare(b));
+    
+    // Build final chart data array
+    const chartData = [];
+    
+    // Add starting balance point if we have data
+    if (sortedEntries.length > 0) {
+      const firstDate = new Date(sortedEntries[0][0] + 'T12:00:00Z');
+      const dayBefore = new Date(firstDate.getTime() - 24 * 60 * 60 * 1000);
+      
+      chartData.push({
+        date: dayBefore,
+        balance: startingBalance,
+        startBalance: startingBalance,
+        endBalance: startingBalance,
+        trades: 0,
+        dailyPnL: 0,
+        details: 'Starting Balance',
+        isStarting: true,
+        percentChange: 0,
+        isProfit: false,
+        isLoss: false
+      });
+    }
+    
+    // Process sorted daily data with correct balance progression
+    let previousBalance = startingBalance;
+    
+    sortedEntries.forEach(([dateKey, item]) => {
+      // Calculate percentage change from previous balance
+      const percentChange = previousBalance !== 0 ? ((item.endBalance - previousBalance) / previousBalance) * 100 : 0;
+      
+      chartData.push({
+        ...item,
+        startBalance: previousBalance,
+        percentChange: percentChange,
+        isProfit: item.dailyPnL > 0,
+        isLoss: item.dailyPnL < 0
+      });
+      
+      previousBalance = item.endBalance;
+    });
+    
+    // Final validation
+    return chartData.filter(item => 
+      item && 
+      item.date instanceof Date && 
+      !isNaN(item.date.getTime()) && 
+      typeof item.balance === 'number' && 
+      !isNaN(item.balance)
+    );
   }
 
   function clearSimulation() {
@@ -425,19 +462,26 @@
   } satisfies Chart.Config;
 </script>
 
-<section class="min-h-screen bg-background p-6">
-  <div class="max-w-4xl mx-auto space-y-8">
-    <!-- Header -->
-    <div class="flex items-center gap-4">
-      <Button variant="outline" onclick={goBack}>
-        ← Back to Simulation
+<section class="min-h-screen bg-background">
+  <!-- Back Navigation - Fixed at top -->
+  <div class="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border/40 px-6 py-3">
+    <div class="max-w-4xl mx-auto">
+      <Button variant="ghost" onclick={goBack} class="text-muted-foreground hover:text-foreground -ml-2">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        Back to Simulation
       </Button>
-      <div>
-        <h1 class="text-3xl font-bold">Trader Details</h1>
-        {#if trader}
-          <p class="text-muted-foreground">{trader.name}</p>
-        {/if}
-      </div>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto px-6 py-8 space-y-8">
+    <!-- Header -->
+    <div class="text-center space-y-4">
+      <h1 class="text-3xl font-bold">Trader Details</h1>
+      {#if trader}
+        <p class="text-xl text-muted-foreground">{trader.name}</p>
+      {/if}
     </div>
 
     {#if isLoading}
@@ -453,7 +497,6 @@
         <CardContent class="p-8">
           <div class="text-center">
             <p class="text-red-600">Error: {error}</p>
-            <Button onclick={goBack} class="mt-4">Go Back</Button>
           </div>
         </CardContent>
       </Card>
@@ -471,7 +514,7 @@
             </div>
             <div>
               <label class="text-sm font-medium text-muted-foreground">ID</label>
-              <p class="text-lg">{trader.id}</p>
+              <p class="text-lg">{trader.secure_id}</p>
             </div>
             <div>
               <label class="text-sm font-medium text-muted-foreground">Added Date</label>
@@ -620,90 +663,73 @@
               <div class="mt-6">
                 <h4 class="text-md font-semibold mb-4">Balance Progression Chart</h4>
                 {#if simulationResults.chartData && simulationResults.chartData.length > 1}
-                  <Chart.Container config={chartConfig} class="aspect-auto h-[300px] w-full">
-                    <AreaChart
-                      data={simulationResults.chartData}
-                      x="date"
-                      xScale={scaleTime()}
-                      y="balance"
-                      series={[
-                        {
-                          key: "balance",
-                          label: "Balance",
-                          color: chartConfig.balance.color,
-                        }
-                      ]}
-                      props={{
-                        area: {
-                          curve: curveNatural,
-                          "fill-opacity": 0.3,
-                          line: { class: "stroke-2" },
-                        },
-                        xAxis: {
-                          tickFormat: (d) => {
-                            try {
-                              return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                            } catch (e) {
-                              return '';
+                  {@const validChartData = simulationResults.chartData.filter(d => d && d.date && typeof d.balance === 'number')}
+                  {console.log('Chart data exists:', simulationResults.chartData.length, 'Valid chart data:', validChartData.length)}
+                  {#if validChartData.length > 1}
+                    <Chart.Container config={chartConfig} class="aspect-auto h-[300px] w-full">
+                      <AreaChart
+                        data={validChartData}
+                        x="date"
+                        xScale={scaleTime()}
+                        y="balance"
+                        series={[
+                          {
+                            key: "balance",
+                            label: "Balance",
+                            color: chartConfig.balance.color,
+                          }
+                        ]}
+                        props={{
+                          area: {
+                            curve: curveNatural,
+                            "fill-opacity": 0.3,
+                            line: { class: "stroke-2" },
+                          },
+                          xAxis: {
+                            tickFormat: (d) => {
+                              try {
+                                return d instanceof Date ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+                              } catch (e) {
+                                return '';
+                              }
+                            }
+                          },
+                          yAxis: {
+                            tickFormat: (d) => {
+                              try {
+                                return typeof d === 'number' ? (d >= 1000 ? `$${(d/1000).toFixed(0)}K` : `$${d.toFixed(0)}`) : '';
+                              } catch (e) {
+                                return '';
+                              }
                             }
                           }
-                        },
-                        yAxis: {
-                          tickFormat: (d) => {
-                            try {
-                              return d >= 1000 ? `$${(d/1000).toFixed(0)}K` : `$${d.toFixed(0)}`;
-                            } catch (e) {
-                              return '';
-                            }
-                          }
-                        }
-                      }}
-                    >
-                      {#snippet tooltip({ data })}
-                        <Chart.Tooltip class="bg-background border shadow-md rounded-lg p-3 max-w-xs">
-                          <div class="text-sm space-y-1">
-                            <!-- Always show balance info, with safe fallbacks -->
-                            <div class="font-medium">
-                              {data?.details || 'Trade Info'}
-                            </div>
-                            
-                            <!-- Current Balance - Always shown -->
-                            <div class="flex items-center gap-2">
-                              <span class="text-muted-foreground">Balance:</span>
-                              <span class="font-bold text-chart-1">
-                                {data?.balance && typeof data.balance === 'number' ? formatUSD(data.balance) : formatUSD(simulationBalance)}
-                              </span>
-                            </div>
-                            
-                            <!-- IDR Equivalent - Always shown -->
-                            <div class="text-xs text-muted-foreground">
-                              {data?.balance && typeof data.balance === 'number' ? formatIDR(data.balance) : formatIDR(simulationBalance)}
-                            </div>
-                            
-                            <!-- Daily P&L - Show if available -->
-                            {#if data?.trades && data.trades > 0 && typeof data.dailyPnL === 'number'}
-                              <div class="flex items-center gap-2">
-                                <span class="text-muted-foreground">Daily P&L:</span>
-                                <span class="font-medium {data.dailyPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
-                                  {data.dailyPnL >= 0 ? '+' : ''}{formatUSD(data.dailyPnL)}
-                                </span>
-                              </div>
-                            {/if}
-                            
-                            <!-- Date - Always shown -->
-                            <div class="text-xs text-muted-foreground">
-                              {data?.date && data.date instanceof Date ? formatChartDate(data.date) : 'Hari ini'}
-                            </div>
-                          </div>
-                        </Chart.Tooltip>
-                      {/snippet}
-                    </AreaChart>
-                  </Chart.Container>
+                        }}
+                      >
+                        {#snippet tooltip()}
+                          <Chart.Tooltip hideLabel />
+                        {/snippet}
+                      </AreaChart>
+                    </Chart.Container>
+                  {:else}
+                    <div class="h-[300px] flex items-center justify-center border rounded-lg bg-muted/10">
+                      <div class="text-center text-muted-foreground">
+                        <p class="text-lg">Insufficient valid chart data</p>
+                        <p class="text-sm">Found {validChartData.length} valid points, need at least 2</p>
+                        <p class="text-xs mt-2">Raw data: {simulationResults.chartData.length} points</p>
+                      </div>
+                    </div>
+                  {/if}
                 {:else}
                   <div class="h-[300px] flex items-center justify-center border rounded-lg bg-muted/10">
                     <div class="text-center text-muted-foreground">
-                      <p class="text-lg">No chart data available</p>
-                      <p class="text-sm">Insufficient trades for chart visualization</p>
+                      <p class="text-lg">No chart data generated</p>
+                      <p class="text-sm">
+                        {#if simulationResults.chartData}
+                          Chart data exists but has {simulationResults.chartData.length} points (need >1)
+                        {:else}
+                          No chart data in simulation results
+                        {/if}
+                      </p>
                     </div>
                   </div>
                 {/if}
@@ -909,7 +935,6 @@
         <CardContent class="p-8">
           <div class="text-center">
             <p class="text-muted-foreground">Trader not found</p>
-            <Button onclick={goBack} class="mt-4">Go Back</Button>
           </div>
         </CardContent>
       </Card>
