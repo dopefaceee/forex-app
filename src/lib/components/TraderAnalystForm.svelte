@@ -11,6 +11,8 @@
 
   let traderName = "";
   let isLoading = false;
+  let isLoadingTraders = true;
+  let hasLoadedTraders = false;
   let message = "";
   let messageType: "success" | "error" | "" = "";
   let tradersList: any[] = [];
@@ -40,6 +42,7 @@
 
   async function loadTraders() {
     console.log('loadTraders function called');
+    isLoadingTraders = true;
     try {
       console.log('Calling supabase select...');
       const { data, error } = await supabase
@@ -60,6 +63,9 @@
     } catch (error) {
       console.error('Error loading traders:', error);
       setMessage("Error connecting to database", "error");
+    } finally {
+      isLoadingTraders = false;
+      hasLoadedTraders = true;
     }
   }
 
@@ -78,11 +84,17 @@
 
     try {
       console.log('Calling supabase insert...');
+      
+      // Generate a secure UUID for the new trader
+      const secureId = crypto.randomUUID();
+      console.log('Generated secure ID:', secureId);
+      
       const { data, error } = await supabase
         .from('trader_analysts')
         .insert([
           {
-            name: traderName.trim()
+            name: traderName.trim(),
+            secure_id: secureId
           }
         ])
         .select()
@@ -149,7 +161,7 @@
 
   function goToTraderDetail(trader: any) {
     console.log('Navigating to trader detail:', trader);
-    goto(`/simulation/trader/${trader.id}`);
+    goto(`/simulation/trader/${trader.secure_id}`);
   }
 </script>
 
@@ -185,12 +197,25 @@
   </Card>
 
   <!-- Traders List -->
-  {#if tradersList.length > 0}
-    <Card>
-      <CardHeader>
-        <CardTitle>Existing Traders/Analysts ({tradersList.length})</CardTitle>
-      </CardHeader>
-      <CardContent>
+  <Card>
+    <CardHeader>
+      <CardTitle>
+        {#if isLoadingTraders}
+          Loading Traders...
+        {:else}
+          Existing Traders/Analysts ({tradersList.length})
+        {/if}
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      {#if isLoadingTraders}
+        <div class="flex items-center justify-center py-8">
+          <div class="flex items-center space-x-2 text-muted-foreground">
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+            <span>Loading trader data...</span>
+          </div>
+        </div>
+      {:else if tradersList.length > 0}
         <div class="space-y-2 max-h-64 overflow-y-auto">
           {#each tradersList as trader}
             <div class="flex justify-between items-center p-3 bg-muted rounded-lg">
@@ -215,7 +240,11 @@
             </div>
           {/each}
         </div>
-      </CardContent>
-    </Card>
-  {/if}
+      {:else if hasLoadedTraders}
+        <div class="text-center py-8 text-muted-foreground">
+          No traders found. Add a trader to get started.
+        </div>
+      {/if}
+    </CardContent>
+  </Card>
 </div>

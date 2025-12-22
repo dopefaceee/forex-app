@@ -6,7 +6,8 @@
       "Bash(pnpm dlx shadcn-svelte@latest add:*)",
       "Bash(npx shadcn-svelte:*)",
       "Bash(npm run dev:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": []
   }

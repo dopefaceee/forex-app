@@ -13,18 +13,21 @@ export type Database = {
       trader_analysts: {
         Row: {
           id: number
+          secure_id: string
           name: string
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: number
+          secure_id?: string
           name: string
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: number
+          secure_id?: string
           name?: string
           created_at?: string
           updated_at?: string
@@ -34,6 +37,7 @@ export type Database = {
         Row: {
           id: number
           trader_id: number
+          secure_trader_id: string
           symbol: string
           price: number
           sl?: number
@@ -47,7 +51,8 @@ export type Database = {
         }
         Insert: {
           id?: number
-          trader_id: number
+          trader_id?: number
+          secure_trader_id: string
           symbol: string
           price: number
           sl?: number
@@ -62,6 +67,7 @@ export type Database = {
         Update: {
           id?: number
           trader_id?: number
+          secure_trader_id?: string
           symbol?: string
           price?: number
           sl?: number
