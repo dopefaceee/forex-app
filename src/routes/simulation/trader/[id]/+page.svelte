@@ -12,6 +12,7 @@
     TableHeader, 
     TableRow 
   } from "$lib/components/ui/table";
+  import * as Select from "$lib/components/ui/select/index.js";
   import { supabase } from "$lib/supabaseClient";
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
@@ -658,31 +659,48 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <Label for="sim-year">Year</Label>
-                <select 
-                  id="sim-year"
+                <Select.Root 
+                  type="single" 
                   bind:value={simulationYear}
-                  class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+                  onSelectedChange={() => {
+                    simulationMonth = null; // Reset month when year changes
+                  }}
                 >
-                  <option value={null}>Select year...</option>
-                  {#each availableYears as year}
-                    <option value={year}>{year}</option>
-                  {/each}
-                </select>
+                  <Select.Trigger class="w-full">
+                    {simulationYear || "Select year..."}
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Group>
+                      {#each availableYears as year}
+                        <Select.Item value={year} label={year.toString()}>
+                          {year}
+                        </Select.Item>
+                      {/each}
+                    </Select.Group>
+                  </Select.Content>
+                </Select.Root>
               </div>
             
               <div>
                 <Label for="sim-month">Month</Label>
-                <select 
-                  id="sim-month"
-                  bind:value={simulationMonth}
+                <Select.Root 
+                  type="single"
                   disabled={!simulationYear}
-                  class="w-full px-3 py-2 border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                  bind:value={simulationMonth}
                 >
-                  <option value={null}>Select month...</option>
-                  {#each simulationAvailableMonths as monthNum}
-                    <option value={monthNum}>{months[monthNum].name}</option>
-                  {/each}
-                </select>
+                  <Select.Trigger class="w-full">
+                    {simulationMonth !== null ? months[simulationMonth].name : "Select month..."}
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Group>
+                      {#each simulationAvailableMonths as monthNum}
+                        <Select.Item value={monthNum} label={months[monthNum].name}>
+                          {months[monthNum].name}
+                        </Select.Item>
+                      {/each}
+                    </Select.Group>
+                  </Select.Content>
+                </Select.Root>
               </div>
             </div>
           {:else}
