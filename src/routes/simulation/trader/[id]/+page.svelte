@@ -13,6 +13,11 @@
     TableRow 
   } from "$lib/components/ui/table";
   import * as Select from "$lib/components/ui/select/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
+  import Calendar from "$lib/components/ui/calendar/Calendar.svelte";
+  import { CalendarIcon } from "@lucide/svelte";
+  import { cn } from "$lib/utils.js";
+  import { type DateValue, CalendarDate, parseDate, today, getLocalTimeZone } from "@internationalized/date";
   import { supabase } from "$lib/supabaseClient";
   import { onMount } from "svelte";
   import { goto } from "$app/navigation";
@@ -22,17 +27,20 @@
   import * as Chart from "$lib/components/ui/chart/index.js";
   import { Trash2 } from "@lucide/svelte";
 
-  let trader: any = null;
-  let trades: any[] = [];
-  let traderId: string;
-  let isLoading = true;
-  let tradesLoading = true;
-  let error = "";
+  let trader = $state<any>(null);
+  let trades = $state<any[]>([]);
+  let isLoading = $state(true);
+  let tradesLoading = $state(true);
+  let error = $state("");
 
-  $: traderId = $page.params.id;
+  let traderId = $derived($page.params.id);
 
-  onMount(async () => {
-    await Promise.all([loadTrader(), loadTrades()]);
+  // Load trader and trades when traderId changes
+  $effect(() => {
+    if (traderId) {
+      loadTrader();
+      loadTrades();
+    }
   });
 
   async function loadTrader() {
@@ -141,8 +149,8 @@
   }
 
   // Filter state
-  let selectedYear: number | null = null;
-  let selectedMonth: number | null = null;
+  let selectedYear = $state<number | null>(null);
+  let selectedMonth = $state<number | null>(null);
 
   // Month names
   const months = [
@@ -161,33 +169,33 @@
   ];
 
   // Get available years and months from trades data
-  $: availableYears = [...new Set(trades.map(trade => {
+  const availableYears = $derived([...new Set(trades.map(trade => {
     return new Date(trade.created_at).getFullYear();
-  }))].sort((a, b) => b - a);
+  }))].sort((a, b) => b - a));
 
-  $: availableMonths = [...new Set(trades.map(trade => {
+  const availableMonths = $derived([...new Set(trades.map(trade => {
     const date = new Date(trade.created_at);
     if (selectedYear && date.getFullYear() === selectedYear) {
       return date.getMonth();
     }
     return null;
-  }).filter(month => month !== null))].sort((a, b) => a - b);
+  }).filter(month => month !== null))].sort((a, b) => a - b));
 
   // Filter trades based on selected year and month
-  $: filteredTrades = trades.filter(trade => {
+  const filteredTrades = $derived(trades.filter(trade => {
     const date = new Date(trade.created_at);
     if (selectedYear && date.getFullYear() !== selectedYear) return false;
     if (selectedMonth !== null && date.getMonth() !== selectedMonth) return false;
     return true;
-  });
+  }));
 
   // Calculate summary statistics based on filtered trades
-  $: totalTrades = filteredTrades.length;
-  $: profitableTrades = filteredTrades.filter(t => (t.profit || 0) > 0).length;
-  $: losingTrades = filteredTrades.filter(t => (t.profit || 0) < 0).length;
-  $: winRate = totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0;
-  $: totalProfit = filteredTrades.reduce((sum, trade) => sum + (trade.profit || 0), 0);
-  $: totalPips = filteredTrades.reduce((sum, trade) => sum + (trade.pips || 0), 0);
+  const totalTrades = $derived(filteredTrades.length);
+  const profitableTrades = $derived(filteredTrades.filter(t => (t.profit || 0) > 0).length);
+  const losingTrades = $derived(filteredTrades.filter(t => (t.profit || 0) < 0).length);
+  const winRate = $derived(totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0);
+  const totalProfit = $derived(filteredTrades.reduce((sum, trade) => sum + (trade.profit || 0), 0));
+  const totalPips = $derived(filteredTrades.reduce((sum, trade) => sum + (trade.pips || 0), 0));
 
   function selectYear(year: number) {
     selectedYear = year;
@@ -204,24 +212,28 @@
   }
 
   // Simulation variables
-  let simulationBalance = 5000; // Default $5000 USD
-  let simulationLot = 0.01; // Default 0.01 lot
-  let simulationMonth: number | null = null;
-  let simulationYear: number | null = null;
-  let simulationUseCustomRange = false;
-  let simulationStartDate = '';
-  let simulationEndDate = '';
-  let simulationResults: any = null;
-  let isSimulating = false;
+  let simulationBalance = $state(5000); // Default $5000 USD
+  let simulationLot = $state(0.01); // Default 0.01 lot
+  let simulationMonth = $state<number | null>(null);
+  let simulationYear = $state<number | null>(null);
+  let simulationUseCustomRange = $state(false);
+  let simulationStartDate = $state<DateValue | undefined>(undefined);
+  let simulationEndDate = $state<DateValue | undefined>(undefined);
+  let simulationResults = $state<any>(null);
+  let isSimulating = $state(false);
+  
+  // Popover open states for date pickers
+  let startDateOpen = $state(false);
+  let endDateOpen = $state(false);
 
   // Available months and years for simulation
-  $: simulationAvailableMonths = [...new Set(trades.map(trade => {
+  const simulationAvailableMonths = $derived([...new Set(trades.map(trade => {
     const date = new Date(trade.created_at);
     if (simulationYear && date.getFullYear() === simulationYear) {
       return date.getMonth();
     }
     return null;
-  }).filter(month => month !== null))].sort((a, b) => a - b);
+  }).filter(month => month !== null))].sort((a, b) => a - b));
 
   function runSimulation() {
     // Validation based on selected mode
@@ -246,11 +258,11 @@
       if (simulationUseCustomRange) {
         // Use custom date range
         if (simulationStartDate) {
-          const start = new Date(simulationStartDate);
+          const start = new Date(simulationStartDate.year, simulationStartDate.month - 1, simulationStartDate.day);
           if (date < start) return false;
         }
         if (simulationEndDate) {
-          const end = new Date(simulationEndDate);
+          const end = new Date(simulationEndDate.year, simulationEndDate.month - 1, simulationEndDate.day);
           end.setHours(23, 59, 59, 999); // Include the entire end date
           if (date > end) return false;
         }
@@ -351,8 +363,12 @@
     let startDate, endDate;
     
     if (simulationUseCustomRange) {
-      startDate = simulationStartDate ? new Date(simulationStartDate) : new Date(sortedTrades[0].created_at);
-      endDate = simulationEndDate ? new Date(simulationEndDate) : new Date(sortedTrades[sortedTrades.length - 1].created_at);
+      startDate = simulationStartDate 
+        ? new Date(simulationStartDate.year, simulationStartDate.month - 1, simulationStartDate.day)
+        : new Date(sortedTrades[0].created_at);
+      endDate = simulationEndDate 
+        ? new Date(simulationEndDate.year, simulationEndDate.month - 1, simulationEndDate.day)
+        : new Date(sortedTrades[sortedTrades.length - 1].created_at);
     } else {
       // Use year/month range
       startDate = new Date(simulationYear, simulationMonth, 1);
@@ -422,8 +438,8 @@
     simulationMonth = null;
     simulationYear = null;
     simulationUseCustomRange = false;
-    simulationStartDate = '';
-    simulationEndDate = '';
+    simulationStartDate = undefined;
+    simulationEndDate = undefined;
   }
 
   function toggleSimulationMode() {
@@ -433,8 +449,8 @@
       simulationMonth = null;
       simulationYear = null;
     } else {
-      simulationStartDate = '';
-      simulationEndDate = '';
+      simulationStartDate = undefined;
+      simulationEndDate = undefined;
     }
   }
 
@@ -452,9 +468,9 @@
   }
 
   // Delete trade functionality
-  let deleteMessage = "";
-  let deleteMessageType: "success" | "error" | "" = "";
-  let deletingTradeId: number | null = null;
+  let deleteMessage = $state("");
+  let deleteMessageType = $state<"success" | "error" | "">("");
+  let deletingTradeId = $state<number | null>(null);
 
   async function deleteTrade(tradeId: number) {
     const confirmed = confirm("Are you sure you want to delete this trade? This action cannot be undone.");
@@ -512,6 +528,12 @@
       color: "var(--chart-1)"
     }
   } satisfies Chart.Config;
+
+  // Date helper functions
+  function formatDateForDisplay(date: DateValue | undefined): string {
+    if (!date) return "Select date...";
+    return `${date.day} ${new Date(date.year, date.month - 1).toLocaleDateString('en-GB', { month: 'short' })} ${date.year}`;
+  }
 </script>
 
 <section class="min-h-screen bg-background">
@@ -704,25 +726,70 @@
               </div>
             </div>
           {:else}
-            <!-- Custom Date Range Selection -->
+            <!-- Custom Date Range Selection with Calendar -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
                 <Label for="sim-start-date">Start Date</Label>
-                <Input
-                  id="sim-start-date"
-                  type="date"
-                  bind:value={simulationStartDate}
-                  class="w-full"
-                />
+                <Popover.Root bind:open={startDateOpen}>
+                  <Popover.Trigger id="sim-start-date">
+                    {#snippet child({ props })}    
+                      <Button
+                        {...props}
+                        variant="outline"
+                        class={cn(
+                          "w-full justify-start text-left font-normal",
+                          !simulationStartDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon class="mr-2 h-4 w-4" />
+                        {formatDateForDisplay(simulationStartDate)}
+                      </Button>
+                    {/snippet}
+                  </Popover.Trigger>
+                  <Popover.Content class="w-auto p-0" align="start">
+                    <Calendar 
+                      type="single"
+                      bind:value={simulationStartDate}
+                      captionLayout="dropdown"
+                      class="rounded-lg border-0"
+                      onValueChange={() => {
+                        startDateOpen = false;
+                      }}
+                    />
+                  </Popover.Content>
+                </Popover.Root>
               </div>
+              
               <div>
                 <Label for="sim-end-date">End Date</Label>
-                <Input
-                  id="sim-end-date"
-                  type="date"
-                  bind:value={simulationEndDate}
-                  class="w-full"
-                />
+                <Popover.Root bind:open={endDateOpen}>
+                  <Popover.Trigger id="sim-end-date">
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        variant="outline"
+                        class={cn(
+                          "w-full justify-start text-left font-normal",
+                          !simulationEndDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon class="mr-2 h-4 w-4" />
+                        {formatDateForDisplay(simulationEndDate)}
+                      </Button>
+                    {/snippet}
+                  </Popover.Trigger>
+                  <Popover.Content class="w-auto p-0" align="start">
+                    <Calendar 
+                      type="single"
+                      bind:value={simulationEndDate}
+                      captionLayout="dropdown"
+                      class="rounded-lg border-0"
+                      onValueChange={() => {
+                        endDateOpen = false;
+                      }}
+                    />
+                  </Popover.Content>
+                </Popover.Root>
               </div>
             </div>
           {/if}
@@ -750,12 +817,11 @@
                 Simulation Results - 
                 {#if simulationUseCustomRange}
                   {#if simulationStartDate && simulationEndDate}
-                    {new Date(simulationStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} 
-                    to {new Date(simulationEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {formatDateForDisplay(simulationStartDate)} to {formatDateForDisplay(simulationEndDate)}
                   {:else if simulationStartDate}
-                    From {new Date(simulationStartDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    From {formatDateForDisplay(simulationStartDate)}
                   {:else if simulationEndDate}
-                    Until {new Date(simulationEndDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    Until {formatDateForDisplay(simulationEndDate)}
                   {:else}
                     Custom Range
                   {/if}

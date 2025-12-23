@@ -7,7 +7,9 @@
       "Bash(npx shadcn-svelte:*)",
       "Bash(npm run dev:*)",
       "Bash(npm install:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(pkill:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
