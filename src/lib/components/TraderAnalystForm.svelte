@@ -173,7 +173,7 @@
     </CardHeader>
     <CardContent class="space-y-4">
       <div>
-        <Label for="trader-name">Trader/Analyst Name *</Label>
+        <Label class="pb-4" for="trader-name">Trader/Analyst Name *</Label>
         <Input
           id="trader-name"
           bind:value={traderName}
