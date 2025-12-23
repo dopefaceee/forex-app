@@ -15,7 +15,7 @@
   <div class="flex flex-col items-center justify-center min-h-screen px-6">
     <div class="text-center space-y-16 max-w-4xl">
       <div class="space-y-4">
-        <h1 class="text-5xl md:text-6xl font-bold tracking-tight">
+        <h1 class="text-5xl md:text-6xl font-bold tracking-tight text-foreground">
           Trading Simulation
         </h1>
         <p class="text-xl leading-relaxed text-muted-foreground">
@@ -24,20 +24,20 @@
             href="https://tradersfamily.id/"
             target="_blank"
             rel="noopener noreferrer"
-            class="font-bold text-green-800 hover:text-green-700 transition-colors"
+            class="font-bold text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300 transition-colors"
           >
             TradersFamily
           </a>
           <br />
           Bantu investor
           <span
-            class="inline-block px-2 py-0.5 rounded bg-black font-bold text-green-400"
+            class="inline-block px-2 py-0.5 rounded bg-card border font-bold text-green-600 dark:text-green-400"
           >
             memaksimalkan profit
           </span>
           dan mengelola
           <span
-            class="inline-block px-2 py-0.5 rounded bg-black font-bold text-red-500"
+            class="inline-block px-2 py-0.5 rounded bg-card border font-bold text-red-600 dark:text-red-400"
           >
             risiko drawdown
           </span>.
