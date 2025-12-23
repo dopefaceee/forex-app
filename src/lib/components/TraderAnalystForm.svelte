@@ -188,7 +188,7 @@
         </Button>
         
         {#if message}
-          <div class="text-sm {messageType === 'success' ? 'text-green-600' : 'text-red-600'}">
+          <div class="text-sm {messageType === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
             {message}
           </div>
         {/if}
@@ -211,7 +211,7 @@
       {#if isLoadingTraders}
         <div class="flex items-center justify-center py-8">
           <div class="flex items-center space-x-2 text-muted-foreground">
-            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+            <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
             <span>Loading trader data...</span>
           </div>
         </div>
@@ -220,7 +220,7 @@
           {#each tradersList as trader}
             <div class="flex justify-between items-center p-4 bg-muted rounded-lg">
               <div class="cursor-pointer flex-1" onclick={() => goToTraderDetail(trader)}>
-                <div class="font-medium text-blue-600 hover:text-blue-800 hover:underline">{trader.name}</div>
+                <div class="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline">{trader.name}</div>
                 <div class="text-xs text-muted-foreground">
                   Added: {new Date(trader.created_at).toLocaleDateString('id-ID', {
                     year: 'numeric',

@@ -571,7 +571,7 @@
       <Card>
         <CardContent class="p-8">
           <div class="text-center">
-            <p class="text-red-600">Error: {error}</p>
+            <p class="text-red-600 dark:text-red-400">Error: {error}</p>
           </div>
         </CardContent>
       </Card>
@@ -840,7 +840,7 @@
                 
                 <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
                   <p class="text-xs sm:text-sm text-muted-foreground">Ending Balance</p>
-                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.endingBalance > simulationResults.startingBalance ? 'text-green-600' : 'text-red-600'}">
+                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.endingBalance > simulationResults.startingBalance ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
                     {formatUSD(simulationResults.endingBalance)}
                   </p>
                   <p class="text-xs text-muted-foreground hidden sm:block">{formatIDR(simulationResults.endingBalance)}</p>
@@ -848,11 +848,11 @@
                 
                 <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
                   <p class="text-xs sm:text-sm text-muted-foreground">Total P&L</p>
-                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
+                  <p class="text-base sm:text-lg font-bold break-words {simulationResults.totalPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
                     {simulationResults.totalPnL >= 0 ? '+' : ''}{formatUSD(simulationResults.totalPnL)}
                   </p>
                   <p class="text-xs text-muted-foreground hidden sm:block">{simulationResults.totalPnL >= 0 ? '+' : ''}{formatIDR(simulationResults.totalPnL)}</p>
-                  <p class="text-xs sm:text-sm font-medium {simulationResults.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}">
+                  <p class="text-xs sm:text-sm font-medium {simulationResults.totalPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
                     {simulationResults.totalPnL >= 0 ? '+' : ''}{((simulationResults.totalPnL / simulationResults.startingBalance) * 100).toFixed(2)}%
                   </p>
                 </div>
@@ -958,10 +958,10 @@
                       <TableRow>
                         <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
                         <TableCell class="font-medium">{trade.symbol}</TableCell>
-                        <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
+                        <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} font-medium">
                           {formatPips(trade.pips)}
                         </TableCell>
-                        <TableCell class="{trade.simulatedPnL >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
+                        <TableCell class="{trade.simulatedPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} font-medium">
                           <div>{trade.simulatedPnL >= 0 ? '+' : ''}{formatUSD(trade.simulatedPnL)}</div>
                           <div class="text-xs text-muted-foreground">{trade.simulatedPnL >= 0 ? '+' : ''}{formatIDR(trade.simulatedPnL)}</div>
                         </TableCell>
@@ -975,7 +975,7 @@
                             size="sm" 
                             onclick={() => deleteTrade(trade.id)}
                             disabled={deletingTradeId === trade.id}
-                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
                           >
                             {#if deletingTradeId === trade.id}
                               <div class="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
@@ -1063,7 +1063,7 @@
             
             <!-- Delete Message Display -->
             {#if deleteMessage}
-              <div class="mt-2 text-sm {deleteMessageType === 'success' ? 'text-green-600' : 'text-red-600'}">
+              <div class="mt-2 text-sm {deleteMessageType === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
                 {deleteMessage}
               </div>
             {/if}
@@ -1102,15 +1102,15 @@
                       <TableRow>
                         <TableCell class="font-medium">{trade.symbol}</TableCell>
                         <TableCell>{formatPrice(trade.price)}</TableCell>
-                        <TableCell class="text-red-500">{formatPrice(trade.sl)}</TableCell>
-                        <TableCell class="text-green-500">{formatPrice(trade.tp)}</TableCell>
+                        <TableCell class="text-red-600 dark:text-red-400">{formatPrice(trade.sl)}</TableCell>
+                        <TableCell class="text-green-600 dark:text-green-400">{formatPrice(trade.tp)}</TableCell>
                         <TableCell>{formatPrice(trade.close_price)}</TableCell>
                         <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
                         <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.close_time)}</TableCell>
-                        <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
+                        <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} font-medium">
                           {formatPips(trade.pips)}
                         </TableCell>
-                        <TableCell class="{(trade.profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">
+                        <TableCell class="{(trade.profit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} font-medium">
                           {formatProfit(trade.profit)}
                         </TableCell>
                         <TableCell>
@@ -1119,7 +1119,7 @@
                             size="sm" 
                             onclick={() => deleteTrade(trade.id)}
                             disabled={deletingTradeId === trade.id}
-                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600"
+                            class="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400"
                           >
                             {#if deletingTradeId === trade.id}
                               <div class="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent"></div>
