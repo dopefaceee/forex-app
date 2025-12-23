@@ -750,6 +750,8 @@
                     <Calendar 
                       type="single"
                       bind:value={simulationStartDate}
+                      captionLayout="dropdown"
+                      class="rounded-lg border-0"
                       onValueChange={() => {
                         startDateOpen = false;
                       }}
@@ -780,6 +782,8 @@
                     <Calendar 
                       type="single"
                       bind:value={simulationEndDate}
+                      captionLayout="dropdown"
+                      class="rounded-lg border-0"
                       onValueChange={() => {
                         endDateOpen = false;
                       }}
