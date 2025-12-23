@@ -621,22 +621,24 @@
         <CardContent class="space-y-4 sm:space-y-6">
           <!-- Simulation Form -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div>
+            <div class="space-y-4">
               <Label for="sim-balance">Balance (USD)</Label>
               <Input
                 id="sim-balance"
                 type="number"
                 bind:value={simulationBalance}
-                placeholder="5000"
-                step="100"
+                placeholder="5000.00"
+                step="0.01"
                 min="100"
+                inputmode="decimal"
+                class="font-mono tabular-nums"
               />
               <p class="text-xs text-muted-foreground mt-1">
                 ≈ {formatIDR(simulationBalance)} (Rate: 1 USD = 10,000 IDR)
               </p>
             </div>
             
-            <div>
+            <div class="space-y-4">
               <Label for="sim-lot">Lot Size</Label>
               <Input
                 id="sim-lot"
@@ -645,29 +647,31 @@
                 placeholder="0.01"
                 step="0.01"
                 min="0.01"
-                max="10"
+                max="10.00"
+                inputmode="decimal"
+                class="font-mono tabular-nums"
               />
             </div>
 
             <!-- Period Selection Mode Toggle -->
-            <div class="sm:col-span-2">
+            <div class="sm:col-span-2 space-y-4">
               <Label>Period Selection</Label>
-              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2">
+              <div class="flex gap-1 p-1 bg-muted rounded-lg">
                 <Button 
-                  variant={!simulationUseCustomRange ? "default" : "outline"} 
-                  size="sm" 
+                  variant={!simulationUseCustomRange ? "default" : "ghost"} 
+                  size="sm"
                   onclick={() => !simulationUseCustomRange || toggleSimulationMode()}
                   disabled={!simulationUseCustomRange}
-                  class="flex-1 sm:flex-none"
+                  class="flex-1 h-8 text-sm font-medium transition-all duration-200 {!simulationUseCustomRange ? 'shadow-sm' : 'hover:bg-background/50'}"
                 >
                   Year/Month
                 </Button>
                 <Button 
-                  variant={simulationUseCustomRange ? "default" : "outline"} 
-                  size="sm" 
+                  variant={simulationUseCustomRange ? "default" : "ghost"} 
+                  size="sm"
                   onclick={() => simulationUseCustomRange || toggleSimulationMode()}
                   disabled={simulationUseCustomRange}
-                  class="flex-1 sm:flex-none"
+                  class="flex-1 h-8 text-sm font-medium transition-all duration-200 {simulationUseCustomRange ? 'shadow-sm' : 'hover:bg-background/50'}"
                 >
                   Custom Range
                 </Button>
@@ -679,7 +683,7 @@
           {#if !simulationUseCustomRange}
             <!-- Year/Month Selection -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div>
+              <div class="space-y-4">
                 <Label for="sim-year">Year</Label>
                 <Select.Root 
                   type="single" 
@@ -703,7 +707,7 @@
                 </Select.Root>
               </div>
             
-              <div>
+              <div class="space-y-4">
                 <Label for="sim-month">Month</Label>
                 <Select.Root 
                   type="single"
@@ -728,7 +732,7 @@
           {:else}
             <!-- Custom Date Range Selection with Calendar -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div>
+              <div class="space-y-4">
                 <Label for="sim-start-date">Start Date</Label>
                 <Popover.Root bind:open={startDateOpen}>
                   <Popover.Trigger id="sim-start-date">
@@ -760,7 +764,7 @@
                 </Popover.Root>
               </div>
               
-              <div>
+              <div class="space-y-4">
                 <Label for="sim-end-date">End Date</Label>
                 <Popover.Root bind:open={endDateOpen}>
                   <Popover.Trigger id="sim-end-date">
