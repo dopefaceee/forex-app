@@ -467,6 +467,9 @@
     }
   }
 
+  // Navigation state
+  let activeTab = $state<'simulation' | 'history'>('simulation');
+
   // Delete trade functionality
   let deleteMessage = $state("");
   let deleteMessageType = $state<"success" | "error" | "">("");
@@ -613,7 +616,34 @@
         </CardContent>
       </Card>
 
+      <!-- Navigation Tabs -->
+      <div class="border-b border-border">
+        <div class="flex space-x-8">
+          <button
+            onclick={() => activeTab = 'simulation'}
+            class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {
+              activeTab === 'simulation' 
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300'
+            }"
+          >
+            Trading Simulation
+          </button>
+          <button
+            onclick={() => activeTab = 'history'}
+            class="py-4 px-1 border-b-2 font-medium text-sm transition-colors {
+              activeTab === 'history' 
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300'
+            }"
+          >
+            Trading History
+          </button>
+        </div>
+      </div>
+
       <!-- Trading Simulation -->
+      {#if activeTab === 'simulation'}
       <Card>
         <CardHeader>
           <CardTitle>Trading Simulation</CardTitle>
@@ -997,7 +1027,10 @@
           {/if}
         </CardContent>
       </Card>
+      {/if}
 
+      <!-- Trading History -->
+      {#if activeTab === 'history'}
       <!-- Year Filter -->
       <Card>
         <CardHeader>
@@ -1154,6 +1187,7 @@
             </div>
           </CardContent>
         </Card>
+      {/if}
       {/if}
     {:else}
       <Card>
