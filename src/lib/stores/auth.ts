@@ -56,16 +56,13 @@ export const authStore = {
     try {
       update(state => ({ ...state, loading: true, error: null }));
       
-      // Detect environment and set appropriate redirect
-      const origin = window.location.origin;
-      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+      // Use environment variable for redirect URL
+      const redirectUrl = import.meta.env.PUBLIC_OAUTH_REDIRECT_URL;
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: isLocalhost 
-            ? `${origin}/auth/callback`  // Local: custom callback
-            : 'https://forex-app-mu.vercel.app/'  // Production: your domain
+          redirectTo: redirectUrl,
         },
       });
 
