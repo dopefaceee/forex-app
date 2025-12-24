@@ -59,26 +59,13 @@ export const authStore = {
       // Determine redirect URL based on environment
       const getRedirectUrl = () => {
         const origin = window.location.origin;
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes(':5173');
         
-        // Check for environment variable overrides
-        if (browser) {
-          const localhostCallback = import.meta.env.PUBLIC_AUTH_CALLBACK_URL_LOCALHOST;
-          const prodCallback = import.meta.env.PUBLIC_AUTH_CALLBACK_URL_PROD;
-          
-          if (isLocalhost && localhostCallback) {
-            return localhostCallback;
-          } else if (!isLocalhost && prodCallback) {
-            return prodCallback;
-          }
-        }
-        
-        // Fallback to auto-detection
         if (isLocalhost) {
-          // For localhost, use the local callback
+          // For localhost development, use custom callback
           return `${origin}/auth/callback`;
         } else {
-          // For production, use the Supabase callback URL
+          // For production, use Supabase callback
           return 'https://xojnzszxotepmjfrwfcy.supabase.co/auth/v1/callback';
         }
       };
