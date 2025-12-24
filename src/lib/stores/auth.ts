@@ -56,24 +56,16 @@ export const authStore = {
     try {
       update(state => ({ ...state, loading: true, error: null }));
       
-      // Determine redirect URL based on environment
-      const getRedirectUrl = () => {
-        const origin = window.location.origin;
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes(':5173');
-        
-        if (isLocalhost) {
-          // For localhost development, use custom callback
-          return `${origin}/auth/callback`;
-        } else {
-          // For production, use Supabase callback
-          return 'https://xojnzszxotepmjfrwfcy.supabase.co/auth/v1/callback';
-        }
-      };
-
+      // Detect environment and set appropriate redirect
+      const origin = window.location.origin;
+      const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: getRedirectUrl(),
+          redirectTo: isLocalhost 
+            ? `${origin}/auth/callback`  // Local: custom callback
+            : 'https://forex-app-mu.vercel.app/'  // Production: your domain
         },
       });
 
