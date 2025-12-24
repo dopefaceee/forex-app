@@ -56,10 +56,37 @@ export const authStore = {
     try {
       update(state => ({ ...state, loading: true, error: null }));
       
+      // Determine redirect URL based on environment
+      const getRedirectUrl = () => {
+        const origin = window.location.origin;
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+        
+        // Check for environment variable overrides
+        if (browser) {
+          const localhostCallback = import.meta.env.PUBLIC_AUTH_CALLBACK_URL_LOCALHOST;
+          const prodCallback = import.meta.env.PUBLIC_AUTH_CALLBACK_URL_PROD;
+          
+          if (isLocalhost && localhostCallback) {
+            return localhostCallback;
+          } else if (!isLocalhost && prodCallback) {
+            return prodCallback;
+          }
+        }
+        
+        // Fallback to auto-detection
+        if (isLocalhost) {
+          // For localhost, use the local callback
+          return `${origin}/auth/callback`;
+        } else {
+          // For production, use the Supabase callback URL
+          return 'https://xojnzszxotepmjfrwfcy.supabase.co/auth/v1/callback';
+        }
+      };
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getRedirectUrl(),
         },
       });
 
