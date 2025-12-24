@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button } from "$lib/components/ui/button";
+  import GoogleSignInButton from "$lib/components/GoogleSignInButton.svelte";
+  import { authStore } from "$lib/stores/auth";
   import {
     TrendingUp,
     Target,
@@ -44,10 +46,30 @@
         </p>
       </div>
 
-      <div class="flex justify-center">
-        <a href="/simulation">
-          <Button size="lg" class="min-w-[200px]">Mulai Simulasi</Button>
-        </a>
+      <div class="flex flex-col sm:flex-row justify-center items-center gap-4">
+        {#if $authStore.user}
+          <!-- Logged in: Only show simulation button -->
+          <a href="/simulation">
+            <Button size="lg" class="min-w-[200px]">Mulai Simulasi</Button>
+          </a>
+        {:else if !$authStore.loading}
+          <!-- Not logged in: Show both buttons side by side -->
+          <GoogleSignInButton size="lg" class="min-w-[200px]" />
+          <Button 
+            size="lg" 
+            variant="outline" 
+            class="min-w-[200px]" 
+            onclick={() => authStore.signInWithGoogle()}
+          >
+            Mulai Simulasi
+          </Button>
+        {:else}
+          <!-- Loading state -->
+          <div class="flex items-center gap-2">
+            <div class="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+            <span class="text-muted-foreground">Loading...</span>
+          </div>
+        {/if}
       </div>
     </div>
   </div>
