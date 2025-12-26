@@ -56,8 +56,17 @@ export const authStore = {
     try {
       update(state => ({ ...state, loading: true, error: null }));
       
-      // Use environment variable for redirect URL
-      const redirectUrl = import.meta.env.PUBLIC_OAUTH_REDIRECT_URL;
+      // Get redirect URL based on environment
+      let redirectUrl = import.meta.env.PUBLIC_OAUTH_REDIRECT_URL;
+      
+      // Fallback to dynamic URL detection if env var not set
+      if (!redirectUrl && browser) {
+        const { protocol, hostname, port } = window.location;
+        const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : '';
+        redirectUrl = `${protocol}//${hostname}${portSuffix}/`;
+      }
+      
+      console.log('OAuth redirect URL:', redirectUrl);
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
