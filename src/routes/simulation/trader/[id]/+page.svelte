@@ -169,33 +169,40 @@
   ];
 
   // Get available years and months from trades data
-  const availableYears = $derived([...new Set(trades.map(trade => {
-    return new Date(trade.created_at).getFullYear();
-  }))].sort((a, b) => b - a));
+  const availableYears = $derived(
+    !trades || !Array.isArray(trades) || trades.length === 0 ? [] : 
+    [...new Set(trades.map(trade => new Date(trade.created_at).getFullYear()))].sort((a, b) => b - a)
+  );
 
-  const availableMonths = $derived([...new Set(trades.map(trade => {
-    const date = new Date(trade.created_at);
-    if (selectedYear && date.getFullYear() === selectedYear) {
-      return date.getMonth();
-    }
-    return null;
-  }).filter(month => month !== null))].sort((a, b) => a - b));
+  const availableMonths = $derived(
+    !trades || !Array.isArray(trades) || trades.length === 0 ? [] :
+    [...new Set(trades.map(trade => {
+      const date = new Date(trade.created_at);
+      if (selectedYear && date.getFullYear() === selectedYear) {
+        return date.getMonth();
+      }
+      return null;
+    }).filter(month => month !== null))].sort((a, b) => a - b)
+  );
 
   // Filter trades based on selected year and month
-  const filteredTrades = $derived(trades.filter(trade => {
-    const date = new Date(trade.created_at);
-    if (selectedYear && date.getFullYear() !== selectedYear) return false;
-    if (selectedMonth !== null && date.getMonth() !== selectedMonth) return false;
-    return true;
-  }));
+  const filteredTrades = $derived(
+    !trades || !Array.isArray(trades) ? [] :
+    trades.filter(trade => {
+      const date = new Date(trade.created_at);
+      if (selectedYear && date.getFullYear() !== selectedYear) return false;
+      if (selectedMonth !== null && date.getMonth() !== selectedMonth) return false;
+      return true;
+    })
+  );
 
   // Calculate summary statistics based on filtered trades
-  const totalTrades = $derived(filteredTrades.length);
-  const profitableTrades = $derived(filteredTrades.filter(t => (t.profit || 0) > 0).length);
-  const losingTrades = $derived(filteredTrades.filter(t => (t.profit || 0) < 0).length);
+  const totalTrades = $derived(filteredTrades ? filteredTrades.length : 0);
+  const profitableTrades = $derived(filteredTrades ? filteredTrades.filter(t => (t.profit || 0) > 0).length : 0);
+  const losingTrades = $derived(filteredTrades ? filteredTrades.filter(t => (t.profit || 0) < 0).length : 0);
   const winRate = $derived(totalTrades > 0 ? (profitableTrades / totalTrades) * 100 : 0);
-  const totalProfit = $derived(filteredTrades.reduce((sum, trade) => sum + (trade.profit || 0), 0));
-  const totalPips = $derived(filteredTrades.reduce((sum, trade) => sum + (trade.pips || 0), 0));
+  const totalProfit = $derived(filteredTrades ? filteredTrades.reduce((sum, trade) => sum + (trade.profit || 0), 0) : 0);
+  const totalPips = $derived(filteredTrades ? filteredTrades.reduce((sum, trade) => sum + (trade.pips || 0), 0) : 0);
 
   function selectYear(year: number) {
     selectedYear = year;
@@ -214,8 +221,8 @@
   // Simulation variables
   let simulationBalance = $state(5000); // Default $5000 USD
   let simulationLot = $state(0.01); // Default 0.01 lot
-  let simulationMonth = $state<number | null>(null);
-  let simulationYear = $state<number | null>(null);
+  let simulationMonth = $state<number | string>("");
+  let simulationYear = $state<string>("");
   let simulationUseCustomRange = $state(false);
   let simulationStartDate = $state<DateValue | undefined>(undefined);
   let simulationEndDate = $state<DateValue | undefined>(undefined);
@@ -227,13 +234,18 @@
   let endDateOpen = $state(false);
 
   // Available months and years for simulation
-  const simulationAvailableMonths = $derived([...new Set(trades.map(trade => {
-    const date = new Date(trade.created_at);
-    if (simulationYear && date.getFullYear() === simulationYear) {
-      return date.getMonth();
-    }
-    return null;
-  }).filter(month => month !== null))].sort((a, b) => a - b));
+  const simulationAvailableMonths = $derived(
+    !trades || !Array.isArray(trades) || trades.length === 0 || !simulationYear ? [] :
+    (() => {
+      const yearInt = parseInt(simulationYear);
+      if (isNaN(yearInt)) return [];
+      
+      return [...new Set(trades
+        .filter(trade => new Date(trade.created_at).getFullYear() === yearInt)
+        .map(trade => new Date(trade.created_at).getMonth())
+      )].sort((a, b) => a - b);
+    })()
+  );
 
   function runSimulation() {
     // Validation based on selected mode
@@ -243,7 +255,7 @@
         return;
       }
     } else {
-      if (!simulationYear || simulationMonth === null) {
+      if (!simulationYear || simulationMonth === "" || simulationMonth === null || simulationMonth === undefined) {
         alert('Please select year and month for simulation');
         return;
       }
@@ -269,7 +281,7 @@
         return true;
       } else {
         // Use year/month filter
-        return date.getFullYear() === simulationYear && date.getMonth() === simulationMonth;
+        return date.getFullYear() === parseInt(simulationYear) && date.getMonth() === parseInt(simulationMonth as string);
       }
     }).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -435,23 +447,27 @@
 
   function clearSimulation() {
     simulationResults = null;
-    simulationMonth = null;
-    simulationYear = null;
-    simulationUseCustomRange = false;
-    simulationStartDate = undefined;
-    simulationEndDate = undefined;
+    // Don't reset the form values, just clear the results
+    // This allows users to run simulation again with same parameters
   }
 
   function toggleSimulationMode() {
-    simulationUseCustomRange = !simulationUseCustomRange;
-    // Clear existing settings when switching modes
-    if (simulationUseCustomRange) {
-      simulationMonth = null;
-      simulationYear = null;
-    } else {
-      simulationStartDate = undefined;
-      simulationEndDate = undefined;
-    }
+    // Clear any existing simulation results when switching modes
+    simulationResults = null;
+    
+    // Use setTimeout to defer the mode switch slightly to reduce perceived lag
+    setTimeout(() => {
+      simulationUseCustomRange = !simulationUseCustomRange;
+      
+      // Clear existing settings when switching modes
+      if (simulationUseCustomRange) {
+        simulationMonth = "";
+        simulationYear = "";
+      } else {
+        simulationStartDate = undefined;
+        simulationEndDate = undefined;
+      }
+    }, 10);
   }
 
   // Helper function for clean date formatting
@@ -690,8 +706,11 @@
                 <Button 
                   variant={!simulationUseCustomRange ? "default" : "ghost"} 
                   size="sm"
-                  onclick={() => !simulationUseCustomRange || toggleSimulationMode()}
-                  disabled={!simulationUseCustomRange}
+                  onclick={() => {
+                    if (simulationUseCustomRange) {
+                      toggleSimulationMode();
+                    }
+                  }}
                   class="flex-1 h-8 text-sm font-medium transition-all duration-200 {!simulationUseCustomRange ? 'shadow-sm' : 'hover:bg-background/50'}"
                 >
                   Year/Month
@@ -699,8 +718,11 @@
                 <Button 
                   variant={simulationUseCustomRange ? "default" : "ghost"} 
                   size="sm"
-                  onclick={() => simulationUseCustomRange || toggleSimulationMode()}
-                  disabled={simulationUseCustomRange}
+                  onclick={() => {
+                    if (!simulationUseCustomRange) {
+                      toggleSimulationMode();
+                    }
+                  }}
                   class="flex-1 h-8 text-sm font-medium transition-all duration-200 {simulationUseCustomRange ? 'shadow-sm' : 'hover:bg-background/50'}"
                 >
                   Custom Range
@@ -715,48 +737,40 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div class="space-y-4">
                 <Label for="sim-year">Year</Label>
-                <Select.Root 
-                  type="single" 
+                <select 
                   bind:value={simulationYear}
-                  onSelectedChange={() => {
-                    simulationMonth = null; // Reset month when year changes
-                  }}
+                  onchange={() => simulationMonth = ""}
+                  class="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
                 >
-                  <Select.Trigger class="w-full">
-                    {simulationYear || "Select year..."}
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Group>
-                      {#each availableYears as year}
-                        <Select.Item value={year} label={year.toString()}>
-                          {year}
-                        </Select.Item>
-                      {/each}
-                    </Select.Group>
-                  </Select.Content>
-                </Select.Root>
+                  <option value="">Select year...</option>
+                  {#if availableYears && availableYears.length > 0}
+                    {#each availableYears as year}
+                      <option value={year.toString()}>{year}</option>
+                    {/each}
+                  {:else}
+                    <option value="" disabled>No years available</option>
+                  {/if}
+                </select>
               </div>
             
               <div class="space-y-4">
                 <Label for="sim-month">Month</Label>
-                <Select.Root 
-                  type="single"
+                <select 
                   disabled={!simulationYear}
                   bind:value={simulationMonth}
+                  class="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground disabled:bg-muted disabled:text-muted-foreground"
                 >
-                  <Select.Trigger class="w-full">
-                    {simulationMonth !== null ? months[simulationMonth].name : "Select month..."}
-                  </Select.Trigger>
-                  <Select.Content>
-                    <Select.Group>
-                      {#each simulationAvailableMonths as monthNum}
-                        <Select.Item value={monthNum} label={months[monthNum].name}>
-                          {months[monthNum].name}
-                        </Select.Item>
-                      {/each}
-                    </Select.Group>
-                  </Select.Content>
-                </Select.Root>
+                  <option value="">Select month...</option>
+                  {#if simulationAvailableMonths && simulationAvailableMonths.length > 0}
+                    {#each simulationAvailableMonths as monthNum}
+                      <option value={monthNum}>{months[monthNum].name}</option>
+                    {/each}
+                  {:else}
+                    <option value="" disabled>
+                      {simulationYear ? "No months available for this year" : "Select year first"}
+                    </option>
+                  {/if}
+                </select>
               </div>
             </div>
           {:else}
@@ -832,7 +846,7 @@
           <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Button 
               onclick={runSimulation}
-              disabled={isSimulating || (simulationUseCustomRange ? (!simulationStartDate && !simulationEndDate) : (!simulationYear || simulationMonth === null))}
+              disabled={isSimulating || (simulationUseCustomRange ? (!simulationStartDate && !simulationEndDate) : (!simulationYear || simulationMonth === "" || simulationMonth === null || simulationMonth === undefined))}
             >
               {isSimulating ? 'Simulating...' : 'Run Simulation'}
             </Button>
@@ -1045,16 +1059,20 @@
         </CardHeader>
         <CardContent>
           <div class="flex flex-wrap gap-2">
-            {#each availableYears as year}
-              <button
-                onclick={() => selectYear(year)}
-                class="px-4 py-2 rounded-lg border transition-colors {selectedYear === year 
-                  ? 'bg-primary text-primary-foreground border-primary' 
-                  : 'bg-background border-border hover:bg-muted'}"
-              >
-                {year}
-              </button>
-            {/each}
+            {#if availableYears && availableYears.length > 0}
+              {#each availableYears as year}
+                <button
+                  onclick={() => selectYear(year)}
+                  class="px-4 py-2 rounded-lg border transition-colors {selectedYear === year 
+                    ? 'bg-primary text-primary-foreground border-primary' 
+                    : 'bg-background border-border hover:bg-muted'}"
+                >
+                  {year}
+                </button>
+              {/each}
+            {:else}
+              <p class="text-muted-foreground text-sm">No trade data available</p>
+            {/if}
           </div>
         </CardContent>
       </Card>
@@ -1068,7 +1086,7 @@
           <CardContent>
             <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-12 gap-2">
               {#each months as month}
-                {@const hasData = availableMonths.includes(month.number)}
+                {@const hasData = availableMonths && availableMonths.includes(month.number)}
                 <button
                   onclick={() => selectMonth(month.number)}
                   disabled={!hasData}
