@@ -490,6 +490,7 @@
   let deleteMessage = $state("");
   let deleteMessageType = $state<"success" | "error" | "">("");
   let deletingTradeId = $state<number | null>(null);
+  let deletingMonth = $state(false);
 
   async function deleteTrade(tradeId: number) {
     const confirmed = confirm("Are you sure you want to delete this trade? This action cannot be undone.");
@@ -536,6 +537,74 @@
           deleteMessage = "";
           deleteMessageType = "";
         }, 3000);
+      }
+    }
+  }
+
+  async function deleteMonthTrades() {
+    if (!selectedYear || selectedMonth === null) {
+      alert('Please select a year and month first');
+      return;
+    }
+
+    const monthName = months[selectedMonth].name;
+    const confirmed = confirm(`Are you sure you want to delete ALL trades for ${monthName} ${selectedYear}? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    deletingMonth = true;
+    deleteMessage = "";
+    deleteMessageType = "";
+
+    try {
+      // Get all trade IDs for the selected month
+      const tradesToDelete = filteredTrades.map(trade => trade.id);
+      
+      if (tradesToDelete.length === 0) {
+        alert('No trades found for selected month');
+        deletingMonth = false;
+        return;
+      }
+
+      // Delete all trades for the selected month
+      const { error } = await supabase
+        .from('trades')
+        .delete()
+        .in('id', tradesToDelete);
+
+      if (error) {
+        console.error('Error deleting month trades:', error);
+        deleteMessage = `Error: ${error.message}`;
+        deleteMessageType = "error";
+        return;
+      }
+
+      deleteMessage = `Successfully deleted ${tradesToDelete.length} trades for ${monthName} ${selectedYear}`;
+      deleteMessageType = "success";
+      
+      // Reload trades to update the list
+      await loadTrades();
+      
+      // Clear simulation results if they exist (since trade data changed)
+      if (simulationResults) {
+        simulationResults = null;
+      }
+
+      // Reset month selection since no trades exist for this month now
+      selectedMonth = null;
+
+    } catch (error) {
+      console.error('Error deleting month trades:', error);
+      deleteMessage = "An unexpected error occurred while deleting trades";
+      deleteMessageType = "error";
+    } finally {
+      deletingMonth = false;
+      
+      // Clear message after 5 seconds
+      if (deleteMessage) {
+        setTimeout(() => {
+          deleteMessage = "";
+          deleteMessageType = "";
+        }, 5000);
       }
     }
   }
@@ -1081,7 +1150,26 @@
       {#if selectedYear}
         <Card>
           <CardHeader>
-            <CardTitle>Month Filter for {selectedYear}</CardTitle>
+            <CardTitle class="flex items-center justify-between">
+              Month Filter for {selectedYear}
+              {#if selectedMonth !== null && filteredTrades.length > 0}
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  onclick={deleteMonthTrades}
+                  disabled={deletingMonth}
+                  class="flex items-center gap-2"
+                >
+                  {#if deletingMonth}
+                    <div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                    Deleting...
+                  {:else}
+                    <Trash2 class="h-4 w-4" />
+                    Delete {months[selectedMonth].name} Trades
+                  {/if}
+                </Button>
+              {/if}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div class="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-12 gap-2">
@@ -1100,6 +1188,24 @@
                 </button>
               {/each}
             </div>
+            
+            {#if selectedMonth !== null && filteredTrades.length > 0}
+              <div class="mt-4 p-3 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                <div class="flex items-start gap-2">
+                  <svg class="w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                  </svg>
+                  <div class="text-sm">
+                    <p class="font-medium text-orange-800 dark:text-orange-200">
+                      {filteredTrades.length} trades found for {months[selectedMonth].name} {selectedYear}
+                    </p>
+                    <p class="text-orange-700 dark:text-orange-300 mt-1">
+                      Click "Delete {months[selectedMonth].name} Trades" to remove all trades for this month.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            {/if}
           </CardContent>
         </Card>
       {/if}
