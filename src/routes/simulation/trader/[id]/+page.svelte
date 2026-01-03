@@ -40,6 +40,14 @@
     if (traderId) {
       loadTrader();
       loadTrades();
+      loadAvailableTraders();
+    }
+  });
+
+  // Initialize selected traders when current trader is loaded
+  $effect(() => {
+    if (trader && selectedTraders.length === 0) {
+      selectedTraders = [trader.secure_id];
     }
   });
 
@@ -95,8 +103,72 @@
     }
   }
 
+  async function loadAvailableTraders() {
+    isLoadingTraders = true;
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('trader_analysts')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (fetchError) {
+        console.error('Error loading traders:', fetchError);
+        return;
+      }
+
+      availableTraders = data || [];
+      console.log('Loaded available traders:', availableTraders.length);
+    } catch (err) {
+      console.error('Error loading available traders:', err);
+    } finally {
+      isLoadingTraders = false;
+    }
+  }
+
   function goBack() {
     goto('/simulation');
+  }
+
+  function toggleTraderSelection(traderId: string) {
+    const index = selectedTraders.indexOf(traderId);
+    if (index > -1) {
+      // Remove if already selected
+      selectedTraders = selectedTraders.filter(id => id !== traderId);
+    } else {
+      // Add if not selected
+      selectedTraders = [...selectedTraders, traderId];
+    }
+    
+    // Clear simulation results when trader selection changes
+    if (simulationResults) {
+      simulationResults = null;
+    }
+  }
+
+  function isTraderSelected(traderId: string): boolean {
+    return selectedTraders.includes(traderId);
+  }
+
+  async function loadMultipleTradersTrades(traderIds: string[]) {
+    if (traderIds.length === 0) return [];
+    
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('trades')
+        .select('*, trader_analysts!trades_secure_trader_id_fkey(name)')
+        .in('secure_trader_id', traderIds)
+        .order('created_at', { ascending: true });
+
+      if (fetchError) {
+        console.error('Error loading multi-trader trades:', fetchError);
+        return [];
+      }
+
+      return data || [];
+    } catch (err) {
+      console.error('Error loading multi-trader trades:', err);
+      return [];
+    }
   }
 
   function formatPrice(price: number | null | undefined): string {
@@ -229,26 +301,61 @@
   let simulationResults = $state<any>(null);
   let isSimulating = $state(false);
   
+  // Multiple trader selection for simulation
+  let selectedTraders = $state<string[]>([]);
+  let availableTraders = $state<any[]>([]);
+  let isLoadingTraders = $state(false);
+  
   // Popover open states for date pickers
   let startDateOpen = $state(false);
   let endDateOpen = $state(false);
 
-  // Available months and years for simulation
+  // Available months and years for simulation (based on selected traders)
+  let multiTraderTrades = $state<any[]>([]);
+  let isLoadingMultiTraderTrades = $state(false);
+
+  // Load trades from selected traders for year/month filtering
+  $effect(async () => {
+    if (selectedTraders.length > 0) {
+      isLoadingMultiTraderTrades = true;
+      try {
+        multiTraderTrades = await loadMultipleTradersTrades(selectedTraders);
+      } catch (error) {
+        console.error('Error loading multi trader trades for filtering:', error);
+        multiTraderTrades = [];
+      } finally {
+        isLoadingMultiTraderTrades = false;
+      }
+    } else {
+      multiTraderTrades = [];
+    }
+  });
+
+  const simulationAvailableYears = $derived(
+    !multiTraderTrades || !Array.isArray(multiTraderTrades) || multiTraderTrades.length === 0 ? [] : 
+    [...new Set(multiTraderTrades.map(trade => new Date(trade.created_at).getFullYear()))].sort((a, b) => b - a)
+  );
+
   const simulationAvailableMonths = $derived(
-    !trades || !Array.isArray(trades) || trades.length === 0 || !simulationYear ? [] :
+    !multiTraderTrades || !Array.isArray(multiTraderTrades) || multiTraderTrades.length === 0 || !simulationYear ? [] :
     (() => {
       const yearInt = parseInt(simulationYear);
       if (isNaN(yearInt)) return [];
       
-      return [...new Set(trades
+      return [...new Set(multiTraderTrades
         .filter(trade => new Date(trade.created_at).getFullYear() === yearInt)
         .map(trade => new Date(trade.created_at).getMonth())
       )].sort((a, b) => a - b);
     })()
   );
 
-  function runSimulation() {
-    // Validation based on selected mode
+  async function runSimulation() {
+    // Validation
+    if (selectedTraders.length === 0) {
+      alert('Please select at least one trader for simulation');
+      return;
+    }
+    
     if (simulationUseCustomRange) {
       if (!simulationStartDate && !simulationEndDate) {
         alert('Please select at least one date for simulation');
@@ -263,75 +370,128 @@
 
     isSimulating = true;
 
-    // Filter trades based on selected mode and sort by date ascending (earliest first)
-    const simulationTrades = trades.filter(trade => {
-      const date = new Date(trade.created_at);
+    try {
+      // Load trades from all selected traders
+      const allTrades = await loadMultipleTradersTrades(selectedTraders);
       
-      if (simulationUseCustomRange) {
-        // Use custom date range
-        if (simulationStartDate) {
-          const start = new Date(simulationStartDate.year, simulationStartDate.month - 1, simulationStartDate.day);
-          if (date < start) return false;
+      // Filter trades based on selected mode and sort by date ascending (earliest first)
+      const simulationTrades = allTrades.filter(trade => {
+        const date = new Date(trade.created_at);
+        
+        if (simulationUseCustomRange) {
+          // Use custom date range
+          if (simulationStartDate) {
+            const start = new Date(simulationStartDate.year, simulationStartDate.month - 1, simulationStartDate.day);
+            if (date < start) return false;
+          }
+          if (simulationEndDate) {
+            const end = new Date(simulationEndDate.year, simulationEndDate.month - 1, simulationEndDate.day);
+            end.setHours(23, 59, 59, 999); // Include the entire end date
+            if (date > end) return false;
+          }
+          return true;
+        } else {
+          // Use year/month filter
+          return date.getFullYear() === parseInt(simulationYear) && date.getMonth() === parseInt(simulationMonth as string);
         }
-        if (simulationEndDate) {
-          const end = new Date(simulationEndDate.year, simulationEndDate.month - 1, simulationEndDate.day);
-          end.setHours(23, 59, 59, 999); // Include the entire end date
-          if (date > end) return false;
-        }
-        return true;
-      } else {
-        // Use year/month filter
-        return date.getFullYear() === parseInt(simulationYear) && date.getMonth() === parseInt(simulationMonth as string);
+      }).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      if (simulationTrades.length === 0) {
+        alert('No trades found for selected period and traders');
+        isSimulating = false;
+        return;
       }
-    }).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-    if (simulationTrades.length === 0) {
-      alert('No trades found for selected period');
-      isSimulating = false;
-      return;
-    }
+      // Calculate simulation results with merged trades by date
+      let currentBalance = simulationBalance;
+      const tradeResults = simulationTrades.map(trade => {
+        // Simple calculation: lot × pips (in USD)
+        // If pips is positive = profit, if negative = loss
+        const tradePnLUSD = simulationLot * (trade.pips || 0);
+        
+        currentBalance += tradePnLUSD;
 
-    // Calculate simulation results
-    let currentBalance = simulationBalance;
-    const tradeResults = simulationTrades.map(trade => {
-      // Simple calculation: lot × pips (in USD)
-      // If pips is positive = profit, if negative = loss
-      const tradePnLUSD = simulationLot * (trade.pips || 0);
-      
-      currentBalance += tradePnLUSD;
+        return {
+          ...trade,
+          simulatedPnL: tradePnLUSD,
+          balanceAfter: currentBalance,
+          traderName: trade.trader_analysts?.name || 'Unknown'
+        };
+      });
 
-      return {
-        ...trade,
-        simulatedPnL: tradePnLUSD,
-        balanceAfter: currentBalance
+      const totalPnL = currentBalance - simulationBalance;
+      const winningTrades = tradeResults.filter(t => t.simulatedPnL > 0).length;
+      const losingTrades = tradeResults.filter(t => t.simulatedPnL < 0).length;
+      const winRate = tradeResults.length > 0 ? (winningTrades / tradeResults.length) * 100 : 0;
+
+      // Prepare chart data for balance progression (accumulate by date)
+      const chartData = generateChartData(tradeResults, simulationBalance);
+      console.log('Generated chart data:', chartData);
+      console.log('Chart data length:', chartData.length);
+
+      // Get trader summary
+      const traderSummary = getTraderSummary(tradeResults);
+
+      simulationResults = {
+        trades: tradeResults,
+        startingBalance: simulationBalance,
+        endingBalance: currentBalance,
+        totalPnL: totalPnL,
+        winningTrades,
+        losingTrades,
+        winRate,
+        totalTrades: tradeResults.length,
+        chartData: chartData,
+        traderSummary: traderSummary,
+        selectedTraderNames: selectedTraders.map(id => {
+          const trader = availableTraders.find(t => t.secure_id === id);
+          return trader ? trader.name : 'Unknown';
+        }).join(', ')
       };
+
+      console.log('Simulation results:', simulationResults);
+    } catch (error) {
+      console.error('Error running simulation:', error);
+      alert('An error occurred while running the simulation');
+    } finally {
+      isSimulating = false;
+    }
+  }
+
+  function getTraderSummary(tradeResults: any[]): Record<string, any> {
+    const summary: Record<string, any> = {};
+    
+    tradeResults.forEach(trade => {
+      const traderName = trade.traderName;
+      if (!summary[traderName]) {
+        summary[traderName] = {
+          totalTrades: 0,
+          winningTrades: 0,
+          losingTrades: 0,
+          totalPnL: 0,
+          totalPips: 0,
+          winRate: 0
+        };
+      }
+      
+      summary[traderName].totalTrades++;
+      summary[traderName].totalPnL += trade.simulatedPnL;
+      summary[traderName].totalPips += trade.pips || 0;
+      
+      if (trade.simulatedPnL > 0) {
+        summary[traderName].winningTrades++;
+      } else if (trade.simulatedPnL < 0) {
+        summary[traderName].losingTrades++;
+      }
     });
-
-    const totalPnL = currentBalance - simulationBalance;
-    const winningTrades = tradeResults.filter(t => t.simulatedPnL > 0).length;
-    const losingTrades = tradeResults.filter(t => t.simulatedPnL < 0).length;
-    const winRate = tradeResults.length > 0 ? (winningTrades / tradeResults.length) * 100 : 0;
-
-    // Prepare chart data for balance progression (accumulate by date)
-    const chartData = generateChartData(tradeResults, simulationBalance);
-    console.log('Generated chart data:', chartData);
-    console.log('Chart data length:', chartData.length);
-
-    simulationResults = {
-      trades: tradeResults,
-      startingBalance: simulationBalance,
-      endingBalance: currentBalance,
-      totalPnL: totalPnL,
-      winningTrades,
-      losingTrades,
-      winRate,
-      totalTrades: tradeResults.length,
-      chartData: chartData
-    };
-
-    console.log('Simulation results:', simulationResults);
-
-    isSimulating = false;
+    
+    // Calculate win rates
+    Object.keys(summary).forEach(trader => {
+      const s = summary[trader];
+      s.winRate = s.totalTrades > 0 ? (s.winningTrades / s.totalTrades) * 100 : 0;
+    });
+    
+    return summary;
   }
 
   function generateChartData(tradeResults, startingBalance) {
@@ -892,6 +1052,50 @@
           <CardTitle>Trading Simulation</CardTitle>
         </CardHeader>
         <CardContent class="space-y-4 sm:space-y-6">
+          <!-- Multiple Trader Selection -->
+          <div class="space-y-4">
+            <Label>Select Traders for Combined Simulation</Label>
+            <p class="text-sm text-muted-foreground">
+              Choose multiple traders to merge their trades by date and see combined results
+            </p>
+            {#if isLoadingTraders}
+              <div class="flex items-center space-x-2 text-muted-foreground">
+                <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                <span>Loading traders...</span>
+              </div>
+            {:else if availableTraders.length > 0}
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {#each availableTraders as trader}
+                  <div class="flex items-center space-x-2 p-3 bg-muted rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="trader-{trader.secure_id}"
+                      checked={isTraderSelected(trader.secure_id)}
+                      onchange={() => toggleTraderSelection(trader.secure_id)}
+                      class="rounded border-border"
+                    />
+                    <Label for="trader-{trader.secure_id}" class="cursor-pointer flex-1">
+                      <div class="font-medium">{trader.name}</div>
+                      <div class="text-xs text-muted-foreground">
+                        {trader.secure_id === traderId ? '(Current)' : ''}
+                      </div>
+                    </Label>
+                  </div>
+                {/each}
+              </div>
+              {#if selectedTraders.length > 0}
+                <div class="text-sm text-muted-foreground">
+                  Selected: {selectedTraders.length} trader{selectedTraders.length !== 1 ? 's' : ''}
+                  {#if selectedTraders.length > 1}
+                    - Trades will be merged by date
+                  {/if}
+                </div>
+              {/if}
+            {:else}
+              <p class="text-muted-foreground text-sm">No traders available</p>
+            {/if}
+          </div>
+
           <!-- Simulation Form -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div class="space-y-4">
@@ -967,15 +1171,18 @@
                 <select 
                   bind:value={simulationYear}
                   onchange={() => simulationMonth = ""}
-                  class="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
+                  disabled={isLoadingMultiTraderTrades || selectedTraders.length === 0}
+                  class="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground disabled:bg-muted disabled:text-muted-foreground"
                 >
-                  <option value="">Select year...</option>
-                  {#if availableYears && availableYears.length > 0}
-                    {#each availableYears as year}
+                  <option value="">
+                    {selectedTraders.length === 0 ? 'Select traders first' : isLoadingMultiTraderTrades ? 'Loading...' : 'Select year...'}
+                  </option>
+                  {#if simulationAvailableYears && simulationAvailableYears.length > 0}
+                    {#each simulationAvailableYears as year}
                       <option value={year.toString()}>{year}</option>
                     {/each}
-                  {:else}
-                    <option value="" disabled>No years available</option>
+                  {:else if selectedTraders.length > 0 && !isLoadingMultiTraderTrades}
+                    <option value="" disabled>No years available for selected traders</option>
                   {/if}
                 </select>
               </div>
@@ -983,19 +1190,19 @@
               <div class="space-y-4">
                 <Label for="sim-month">Month</Label>
                 <select 
-                  disabled={!simulationYear}
+                  disabled={!simulationYear || isLoadingMultiTraderTrades || selectedTraders.length === 0}
                   bind:value={simulationMonth}
                   class="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground disabled:bg-muted disabled:text-muted-foreground"
                 >
-                  <option value="">Select month...</option>
+                  <option value="">
+                    {selectedTraders.length === 0 ? 'Select traders first' : !simulationYear ? 'Select year first' : 'Select month...'}
+                  </option>
                   {#if simulationAvailableMonths && simulationAvailableMonths.length > 0}
                     {#each simulationAvailableMonths as monthNum}
                       <option value={monthNum}>{months[monthNum].name}</option>
                     {/each}
-                  {:else}
-                    <option value="" disabled>
-                      {simulationYear ? "No months available for this year" : "Select year first"}
-                    </option>
+                  {:else if simulationYear && selectedTraders.length > 0 && !isLoadingMultiTraderTrades}
+                    <option value="" disabled>No months available for selected traders in {simulationYear}</option>
                   {/if}
                 </select>
               </div>
@@ -1073,7 +1280,7 @@
           <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <Button 
               onclick={runSimulation}
-              disabled={isSimulating || (simulationUseCustomRange ? (!simulationStartDate && !simulationEndDate) : (!simulationYear || simulationMonth === "" || simulationMonth === null || simulationMonth === undefined))}
+              disabled={isSimulating || selectedTraders.length === 0 || (simulationUseCustomRange ? (!simulationStartDate && !simulationEndDate) : (!simulationYear || simulationMonth === "" || simulationMonth === null || simulationMonth === undefined))}
             >
               {isSimulating ? 'Simulating...' : 'Run Simulation'}
             </Button>
@@ -1088,22 +1295,27 @@
           <!-- Simulation Results -->
           {#if simulationResults}
             <div class="space-y-4 mt-6 pt-6 border-t">
-              <h3 class="text-lg font-semibold">
-                Simulation Results - 
-                {#if simulationUseCustomRange}
-                  {#if simulationStartDate && simulationEndDate}
-                    {formatDateForDisplay(simulationStartDate)} to {formatDateForDisplay(simulationEndDate)}
-                  {:else if simulationStartDate}
-                    From {formatDateForDisplay(simulationStartDate)}
-                  {:else if simulationEndDate}
-                    Until {formatDateForDisplay(simulationEndDate)}
+              <div>
+                <h3 class="text-lg font-semibold">
+                  Combined Simulation Results - 
+                  {#if simulationUseCustomRange}
+                    {#if simulationStartDate && simulationEndDate}
+                      {formatDateForDisplay(simulationStartDate)} to {formatDateForDisplay(simulationEndDate)}
+                    {:else if simulationStartDate}
+                      From {formatDateForDisplay(simulationStartDate)}
+                    {:else if simulationEndDate}
+                      Until {formatDateForDisplay(simulationEndDate)}
+                    {:else}
+                      Custom Range
+                    {/if}
                   {:else}
-                    Custom Range
+                    {simulationYear} {months[simulationMonth].name}
                   {/if}
-                {:else}
-                  {simulationYear} {months[simulationMonth].name}
-                {/if}
-              </h3>
+                </h3>
+                <p class="text-sm text-muted-foreground mt-1">
+                  Traders: {simulationResults.selectedTraderNames}
+                </p>
+              </div>
               
               <!-- Results Summary -->
               <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -1138,6 +1350,43 @@
                   <p class="text-xs text-muted-foreground">{simulationResults.winningTrades}W / {simulationResults.losingTrades}L</p>
                 </div>
               </div>
+
+              <!-- Individual Trader Performance -->
+              {#if simulationResults.traderSummary && Object.keys(simulationResults.traderSummary).length > 1}
+                <div class="mt-6">
+                  <h4 class="text-sm sm:text-md font-semibold mb-3 sm:mb-4">Individual Trader Performance</h4>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    {#each Object.entries(simulationResults.traderSummary) as [traderName, summaryData]}
+                      {@const summary = summaryData as any}
+                      <div class="p-3 sm:p-4 bg-muted/50 rounded-lg border">
+                        <div class="font-medium text-sm mb-2">{traderName}</div>
+                        <div class="space-y-1 text-xs">
+                          <div class="flex justify-between">
+                            <span>Trades:</span>
+                            <span>{summary.totalTrades}</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span>Win Rate:</span>
+                            <span class="{summary.winRate >= 50 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">{summary.winRate.toFixed(1)}%</span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span>P&L:</span>
+                            <span class="{summary.totalPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                              {summary.totalPnL >= 0 ? '+' : ''}{formatUSD(summary.totalPnL)}
+                            </span>
+                          </div>
+                          <div class="flex justify-between">
+                            <span>Pips:</span>
+                            <span class="{summary.totalPips >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
+                              {summary.totalPips >= 0 ? '+' : ''}{summary.totalPips}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
 
               <!-- Balance Progression Chart -->
               <div class="mt-4 sm:mt-6">
@@ -1221,6 +1470,7 @@
                   <TableHeader>
                     <TableRow>
                       <TableHead>Date</TableHead>
+                      <TableHead>Trader</TableHead>
                       <TableHead>Symbol</TableHead>
                       <TableHead>Pips</TableHead>
                       <TableHead>Simulated P&L</TableHead>
@@ -1232,6 +1482,7 @@
                     {#each simulationResults.trades as trade}
                       <TableRow>
                         <TableCell class="text-xs whitespace-nowrap">{formatDateTime(trade.created_at)}</TableCell>
+                        <TableCell class="text-xs font-medium">{trade.traderName}</TableCell>
                         <TableCell class="font-medium">{trade.symbol}</TableCell>
                         <TableCell class="{(trade.pips || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} font-medium">
                           {formatPips(trade.pips)}
