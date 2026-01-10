@@ -424,6 +424,9 @@
       const losingTrades = tradeResults.filter(t => t.simulatedPnL < 0).length;
       const winRate = tradeResults.length > 0 ? (winningTrades / tradeResults.length) * 100 : 0;
 
+      // Calculate maximum drawdown
+      const drawdownData = calculateMaximumDrawdown(tradeResults, simulationBalance);
+
       // Prepare chart data for balance progression (accumulate by date)
       const chartData = generateChartData(tradeResults, simulationBalance);
       console.log('Generated chart data:', chartData);
@@ -443,6 +446,8 @@
         totalTrades: tradeResults.length,
         chartData: chartData,
         traderSummary: traderSummary,
+        maxDrawdown: drawdownData.maxDrawdown,
+        maxDrawdownPercent: drawdownData.maxDrawdownPercent,
         selectedTraderNames: selectedTraders.map(id => {
           const trader = availableTraders.find(t => t.secure_id === id);
           return trader ? trader.name : 'Unknown';
@@ -456,6 +461,40 @@
     } finally {
       isSimulating = false;
     }
+  }
+
+  function calculateMaximumDrawdown(tradeResults: any[], startingBalance: number) {
+    if (!tradeResults || tradeResults.length === 0) {
+      return { maxDrawdown: 0, maxDrawdownPercent: 0 };
+    }
+
+    let peak = startingBalance;
+    let maxDrawdown = 0;
+    let maxDrawdownPercent = 0;
+
+    tradeResults.forEach(trade => {
+      const currentBalance = trade.balanceAfter;
+      
+      // Update peak if current balance is higher
+      if (currentBalance > peak) {
+        peak = currentBalance;
+      }
+      
+      // Calculate current drawdown from peak
+      const currentDrawdown = peak - currentBalance;
+      const currentDrawdownPercent = peak > 0 ? (currentDrawdown / peak) * 100 : 0;
+      
+      // Update maximum drawdown if current is larger
+      if (currentDrawdown > maxDrawdown) {
+        maxDrawdown = currentDrawdown;
+        maxDrawdownPercent = currentDrawdownPercent;
+      }
+    });
+
+    return { 
+      maxDrawdown: maxDrawdown,
+      maxDrawdownPercent: maxDrawdownPercent 
+    };
   }
 
   function getTraderSummary(tradeResults: any[]): Record<string, any> {
@@ -1318,7 +1357,7 @@
               </div>
               
               <!-- Results Summary -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
                 <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
                   <p class="text-xs sm:text-sm text-muted-foreground">Starting Balance</p>
                   <p class="text-base sm:text-lg font-bold break-words">{formatUSD(simulationResults.startingBalance)}</p>
@@ -1348,6 +1387,17 @@
                   <p class="text-xs sm:text-sm text-muted-foreground">Win Rate</p>
                   <p class="text-base sm:text-lg font-bold">{simulationResults.winRate.toFixed(1)}%</p>
                   <p class="text-xs text-muted-foreground">{simulationResults.winningTrades}W / {simulationResults.losingTrades}L</p>
+                </div>
+                
+                <div class="text-center p-3 sm:p-4 bg-muted rounded-lg">
+                  <p class="text-xs sm:text-sm text-muted-foreground">Max Drawdown</p>
+                  <p class="text-base sm:text-lg font-bold text-red-600 dark:text-red-400 break-words">
+                    -{formatUSD(simulationResults.maxDrawdown)}
+                  </p>
+                  <p class="text-xs text-muted-foreground hidden sm:block">-{formatIDR(simulationResults.maxDrawdown)}</p>
+                  <p class="text-xs sm:text-sm font-medium text-red-600 dark:text-red-400">
+                    -{simulationResults.maxDrawdownPercent.toFixed(2)}%
+                  </p>
                 </div>
               </div>
 
